@@ -1,0 +1,7 @@
+
+/* Tailwindはindex.htmlのCDN経由で適用されるため、ここは空で問題ありません */
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -1,28 +1,40 @@
+
 import { Booking, BookingStatus, ReservationType, AvailabilitySlot, SecondaryStatus } from '../types';
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
+
 /**
- * GASの「ウェブアプリURL」
- * 提供されたURLをデフォルトとして設定しました。
+ * 外部から注入される設定（環境変数）
  */
-export const API_URL = (import.meta.env?.VITE_GAS_URL as string) || 'https://script.google.com/macros/s/AKfycbwc3T-cqgKYlPvedc8cvrheq3Ww-f36pkxshDQWeRpmMB3DVtzg2ZofSnO31EPUHa0t1w/exec'; 
+// Fix: Access VITE_GAS_URL from process.env to avoid TypeScript errors on ImportMeta
+export const API_URL = (process.env.VITE_GAS_URL as string) || '';
+
+const API_CONFIG = {
+  url: API_URL,
+  // Fix: Access VITE_SECURITY_TOKEN from process.env to avoid TypeScript errors on ImportMeta
+  token: (process.env.VITE_SECURITY_TOKEN as string) || ''
+};
 
 // =============================================================================
 // SERVICE IMPLEMENTATION
 // =============================================================================
 
 const fetchGasPost = async (action: string, payload: any = {}) => {
-  if (!API_URL) {
-    throw new Error("API_URLが設定されていません。GASのURLを確認してください。");
+  if (!API_CONFIG.url) {
+    throw new Error("API URLが設定されていません。Cloudflareの環境変数 VITE_GAS_URL を確認してください。");
   }
   
   try {
-    const res = await fetch(API_URL, {
+    const res = await fetch(API_CONFIG.url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, payload }),
+      body: JSON.stringify({ 
+        action, 
+        payload,
+        token: API_CONFIG.token // 合言葉を送信
+      }),
       redirect: 'follow'
     });
     
@@ -36,7 +48,7 @@ const fetchGasPost = async (action: string, payload: any = {}) => {
     return data;
   } catch (error) {
     console.error("GAS API Error:", error);
-    throw new Error("Backend API connection failed. GASのURLが正しいか、公開設定が「全員(Anyone)」になっているか確認してください。");
+    throw new Error("Backend API connection failed.");
   }
 };
 
