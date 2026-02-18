@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [widgetType, setWidgetType] = useState<ReservationType>(ReservationType.PRIVATE);
   const [gasConfigError, setGasConfigError] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [isEmbedMode, setIsEmbedMode] = useState(false);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -24,6 +25,7 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('type')?.toLowerCase() === 'group') setWidgetType(ReservationType.GROUP);
     if (params.get('status') === 'success') setRoute('success');
+    if (params.get('embed') === 'true') setIsEmbedMode(true);
 
     checkGasConfig();
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -85,7 +87,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-100 py-10 px-4">
+    <div className={`min-h-screen ${isEmbedMode ? 'bg-transparent' : 'bg-stone-100'} py-10 px-4`}>
        <div className="max-w-4xl mx-auto">
          
          {(!API_URL || gasConfigError) && (
@@ -117,9 +119,11 @@ const App: React.FC = () => {
          ) : (
             <>
               <BookingWidget reservationType={widgetType} onProceed={(data) => { setBookingData(data); setRoute('form'); }} />
-              <div className="mt-12 text-center">
-                <button onClick={() => setRoute('admin')} className="text-sm text-gray-400 hover:text-stone-600 underline">Management Login</button>
-              </div>
+              {!isEmbedMode && (
+                <div className="mt-12 text-center">
+                  <button onClick={() => setRoute('admin')} className="text-sm text-gray-400 hover:text-stone-600 underline">Management Login</button>
+                </div>
+              )}
             </>
          )}
        </div>
