@@ -55,6 +55,13 @@ export const BookingService = {
   updateSecondaryStatus: async (id: string, status: SecondaryStatus): Promise<void> => {
     await fetchGasPost('updateStatus', { id, secondaryStatus: status });
   },
+  deleteBooking: async (id: string): Promise<void> => {
+    await fetchGasPost('deleteBooking', { id });
+  },
+  getEmailTemplates: async (): Promise<Record<string, string>> => fetchGasPost('getEmailTemplate'),
+  updateEmailTemplate: async (key: string, value: string): Promise<void> => {
+    await fetchGasPost('updateEmailTemplate', { key, value });
+  },
   login: async (email: string, pass: string): Promise<boolean> => {
     const data = await fetchGasPost('login', { email, password: pass });
     return data.success;
