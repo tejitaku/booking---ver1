@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Booking, BookingStatus, SecondaryStatus } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculateCancellationFee } from '../utils/pricing';
-import { Eye, Check, X, Ban, Search, LogOut, Loader2, Clock, Calendar, Trash2, Mail, Settings, UserCheck } from 'lucide-react';
+import { Eye, Check, X, Ban, Search, LogOut, Loader2, Clock, Calendar, Trash2, Mail, Settings, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -25,6 +25,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   // Email Settings State
   const [emailTemplates, setEmailTemplates] = useState<Record<string, string>>({});
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('RECEIVED');
 
   // Cancel Modal State
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -169,6 +170,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     const matchesStatus = statusFilter === 'ALL' || b.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const templateTypes = [
+    { key: 'RECEIVED', label: 'リクエスト受付時' },
+    { key: 'CONFIRMED', label: '承認（確定）時' },
+    { key: 'REJECTED', label: '拒否（満席等）時' },
+    { key: 'CANCELLED', label: 'キャンセル完了時' },
+  ];
 
   if (!loggedIn) {
     return (
@@ -315,46 +323,77 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </div>
           </>
         ) : (
-          <div className="bg-white rounded-xl shadow p-8 max-w-3xl mx-auto border border-gray-100">
-            <h2 className="text-xl font-bold mb-6 flex items-center">
-              <Mail className="mr-2 text-stone-700" size={20} />
-              自動返信メール テンプレート設定
-            </h2>
-            
-            <div className="space-y-8">
-              <div className="space-y-3">
-                <label className="block text-sm font-bold text-gray-700 uppercase tracking-wider">予約リクエスト受付時：件名</label>
-                <input 
-                  type="text" 
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none bg-gray-50"
-                  value={emailTemplates['AUTO_REPLY_SUBJECT'] || ''}
-                  onChange={(e) => setEmailTemplates({...emailTemplates, AUTO_REPLY_SUBJECT: e.target.value})}
-                />
-                <button 
-                  onClick={() => handleSaveTemplate('AUTO_REPLY_SUBJECT', emailTemplates['AUTO_REPLY_SUBJECT'])}
-                  disabled={isSavingTemplate}
-                  className="text-xs bg-stone-700 text-white px-3 py-1.5 rounded hover:bg-stone-800 transition disabled:opacity-50"
-                >
-                  件名を保存
-                </button>
-              </div>
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+              <h2 className="text-xl font-bold mb-6 flex items-center">
+                <Mail className="mr-2 text-stone-700" size={20} />
+                自動メール テンプレート設定
+              </h2>
 
-              <div className="space-y-3">
-                <label className="block text-sm font-bold text-gray-700 uppercase tracking-wider">予約リクエスト受付時：本文</label>
-                <div className="text-[10px] text-gray-400 mb-2">利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"}</div>
-                <textarea 
-                  className="w-full h-64 p-4 border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none font-mono text-sm bg-gray-50 leading-relaxed"
-                  value={emailTemplates['AUTO_REPLY_BODY'] || ''}
-                  onChange={(e) => setEmailTemplates({...emailTemplates, AUTO_REPLY_BODY: e.target.value})}
-                />
-                <button 
-                  onClick={() => handleSaveTemplate('AUTO_REPLY_BODY', emailTemplates['AUTO_REPLY_BODY'])}
-                  disabled={isSavingTemplate}
-                  className="text-xs bg-stone-700 text-white px-3 py-1.5 rounded hover:bg-stone-800 transition disabled:opacity-50"
-                >
-                  本文を保存
-                </button>
+              <div className="flex border-b mb-6">
+                {templateTypes.map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={`px-4 py-2 text-sm font-bold transition-colors border-b-2 -mb-px ${activeTab === t.key ? 'border-stone-800 text-stone-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
+              
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">メール件名 (Subject)</label>
+                  <input 
+                    type="text" 
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none bg-gray-50 font-medium"
+                    value={emailTemplates[`${activeTab}_SUBJECT`] || ''}
+                    onChange={(e) => setEmailTemplates({...emailTemplates, [`${activeTab}_SUBJECT`]: e.target.value})}
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-[10px] text-gray-400 italic">利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"}</p>
+                    <button 
+                      onClick={() => handleSaveTemplate(`${activeTab}_SUBJECT`, emailTemplates[`${activeTab}_SUBJECT`])}
+                      disabled={isSavingTemplate}
+                      className="text-xs bg-stone-700 text-white px-4 py-1.5 rounded-lg hover:bg-stone-800 transition disabled:opacity-50"
+                    >
+                      件名を保存
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">メール本文 (Body)</label>
+                  <textarea 
+                    className="w-full h-80 p-4 border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none font-mono text-sm bg-gray-50 leading-relaxed"
+                    value={emailTemplates[`${activeTab}_BODY`] || ''}
+                    onChange={(e) => setEmailTemplates({...emailTemplates, [`${activeTab}_BODY`]: e.target.value})}
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-[10px] text-gray-400 italic">
+                      利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"} 
+                      {activeTab === 'CANCELLED' && (", {{refund_amount}}")}
+                    </p>
+                    <button 
+                      onClick={() => handleSaveTemplate(`${activeTab}_BODY`, emailTemplates[`${activeTab}_BODY`])}
+                      disabled={isSavingTemplate}
+                      className="text-xs bg-stone-700 text-white px-4 py-1.5 rounded-lg hover:bg-stone-800 transition disabled:opacity-50"
+                    >
+                      本文を保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start">
+               <Settings size={18} className="text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
+               <div className="text-xs text-blue-800 space-y-1">
+                 <p className="font-bold">メール送信に関する注意点：</p>
+                 <p>・メールはGoogle Apps Scriptを実行しているアカウント（または設定済みの名前エイリアス）から送信されます。</p>
+                 <p>・独自ドメインから送信するには、Gmailの設定で該当ドメインのメールアドレスを「アカウントとインポート ＞ 名前」に追加し、デフォルト送信に設定するか、スクリプトの実行ユーザーとして設定してください。</p>
+               </div>
             </div>
           </div>
         )}
@@ -495,7 +534,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
              <div className="bg-amber-50 border border-amber-200 p-3 rounded mb-6 flex items-start">
                 <Settings size={16} className="text-amber-600 mr-2 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  ※ ステータスを「キャンセル」に更新します。この操作ではStripeの自動返金は行われません。実行後、Stripe管理画面から手動で返金を行ってください。
+                  ※ ステータスを「キャンセル」に更新し、自動返信メールを送信します。この操作ではStripeの自動返金は行われません。実行後、Stripe管理画面から手動で返金を行ってください。
                 </p>
              </div>
 
@@ -516,7 +555,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-4">ステータスを更新しました</h3>
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-              予約を「キャンセル」に変更しました。<br />
+              予約を「キャンセル」に変更し、顧客へメールを送信しました。<br />
               <strong className="text-red-600 text-lg block mt-2">Stripeで ¥{lastRefundAmount.toLocaleString()} を返金してください。</strong>
             </p>
             <button 
