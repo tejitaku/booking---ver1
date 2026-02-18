@@ -62,6 +62,7 @@ export const BookingService = {
   updateEmailTemplate: async (key: string, value: string): Promise<void> => {
     await fetchGasPost('updateEmailTemplate', { key, value });
   },
+  sendTestEmail: async (type: string): Promise<any> => fetchGasPost('sendTestEmail', { type }),
   login: async (email: string, pass: string): Promise<boolean> => {
     const data = await fetchGasPost('login', { email, password: pass });
     return data.success;
