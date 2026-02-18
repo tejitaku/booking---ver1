@@ -48,14 +48,12 @@ const App: React.FC = () => {
 
   const handleFormSubmit = async (fullData: any) => {
     try {
-      // 予約データをGASへ送信
       const response = await BookingService.createBooking({ ...bookingData, ...fullData });
       
-      // 自動リダイレクトの復活
+      // 自動リダイレクト
       if (response.checkoutUrl) {
         window.location.href = response.checkoutUrl;
       } else {
-        // 無料プランなどの場合はそのまま完了画面へ
         setRoute('success');
       }
     } catch (e: any) {
@@ -73,7 +71,8 @@ const App: React.FC = () => {
           <h2 className="serif text-3xl font-bold text-stone-900 mb-6">We have received your request!</h2>
           <div className="text-gray-600 space-y-4 text-left md:text-center leading-relaxed">
             <p>A confirmation email regarding your booking details has been sent to your email address. Please check your inbox.</p>
-            <p>Once your reservation is confirmed, a member of the facility will notify you again by email within three days. Please wait a little while.</p>
+            <p>Once your reservation is confirmed, a member of the facility will notify you again by email within three days.</p>
+            <p>Please wait a little while.</p>
             <p>If you do not receive an email after three days, there may have been an error in the email address you entered.</p>
             <p>We apologize for the inconvenience, but please contact SANGEN at <a href="mailto:info@sangen-sake.jp" className="text-stone-900 font-bold underline">info@sangen-sake.jp</a>.</p>
           </div>
