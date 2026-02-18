@@ -91,7 +91,7 @@ function createBooking(payload) {
   let sessionId = null;
   if (payload.totalPrice > 0 && stripeKey) {
     try {
-      const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey);
+      const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey, payload.date, payload.time);
       checkoutUrl = session.url;
       sessionId = session.id;
     } catch (e) { console.error("Stripe Error: " + e.message); }
@@ -99,12 +99,14 @@ function createBooking(payload) {
   
   const id = 'bk_' + new Date().getTime();
   const sheet = getSheet();
-  payload.stripeSessionId = sessionId; // 保存しておく
+  payload.stripeSessionId = sessionId;
   sheet.appendRow([id, payload.type, payload.date, payload.time, 'REQUESTED', payload.adults, payload.adultsNonAlc, payload.children, payload.infants, payload.totalPrice, payload.representative.lastName, payload.representative.email, JSON.stringify(payload), new Date()]);
   return { success: true, id, checkoutUrl };
 }
 
-function createStripeSession(amount, email, returnUrl, key) {
+function createStripeSession(amount, email, returnUrl, key, date, time) {
+  // Stripeダッシュボードで見やすいように説明文を作成
+  const description = "Sangen Experience: " + date + " " + time + " (JST)";
   const options = {
     method: 'post',
     headers: { 'Authorization': 'Bearer ' + key },
@@ -112,25 +114,23 @@ function createStripeSession(amount, email, returnUrl, key) {
       'payment_method_types[]': 'card',
       'line_items[0][price_data][currency]': 'jpy',
       'line_items[0][price_data][product_data][name]': 'Sangen Experience',
+      'line_items[0][price_data][product_data][description]': description,
       'line_items[0][price_data][unit_amount]': String(Math.round(amount)),
       'line_items[0][quantity]': '1',
       'mode': 'payment',
       'success_url': returnUrl + '?status=success',
       'cancel_url': returnUrl + '?status=cancel',
-      'customer_email': email
+      'customer_email': email,
+      'payment_intent_data[description]': description // これによりダッシュボードの支払い一覧にJST時間が表示される
     }
   };
   const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions', options);
   return JSON.parse(response.getContentText());
 }
 
-/**
- * Stripe返金実行
- */
 function refundStripePayment(sessionId, amount, key) {
   if (!sessionId) return { success: false, error: 'No session ID' };
   try {
-    // 1. セッション詳細から PaymentIntent ID を取得
     const sessionRes = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + sessionId, {
       headers: { 'Authorization': 'Bearer ' + key }
     });
@@ -138,7 +138,6 @@ function refundStripePayment(sessionId, amount, key) {
     const piId = session.payment_intent;
     if (!piId) return { success: false, error: 'Payment not completed yet' };
 
-    // 2. 返金実行
     const refundOptions = {
       method: 'post',
       headers: { 'Authorization': 'Bearer ' + key },
@@ -172,24 +171,16 @@ function updateBookingStatus(p) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == p.id) {
       let bookingData = JSON.parse(data[i][12]);
-      
-      // ステータス更新
       if (p.status) sheet.getRange(i + 1, 5).setValue(p.status);
-
-      // 承認時のタイムスタンプ
       if (p.status === 'CONFIRMED') {
         bookingData.confirmedAt = nowJST;
       }
-
-      // キャンセル時の返金処理 (オプション)
       if (p.status === 'CANCELLED' && bookingData.stripeSessionId && stripeKey && p.refundAmount) {
          refundStripePayment(bookingData.stripeSessionId, p.refundAmount, stripeKey);
       }
-
       if (p.status) bookingData.status = p.status;
       if (p.secondaryStatus) bookingData.secondaryStatus = p.secondaryStatus;
       if (p.notes) bookingData.adminNotes = p.notes;
-      
       sheet.getRange(i + 1, 13).setValue(JSON.stringify(bookingData));
       return { success: true };
     }
