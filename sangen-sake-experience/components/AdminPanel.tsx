@@ -142,6 +142,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
   const handleSaveTemplate = async (key: string, value: string) => {
     setIsSavingTemplate(true);
+    setIsProcessing(true); // グローバルの処理中オーバーレイを表示
     try {
       await BookingService.updateEmailTemplate(key, value);
       await loadEmailTemplates();
@@ -149,6 +150,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       alert("テンプレートの保存に失敗しました: " + e);
     } finally {
       setIsSavingTemplate(false);
+      setIsProcessing(false); // オーバーレイを非表示
     }
   };
 
@@ -212,7 +214,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         <div className="fixed inset-0 bg-white/40 z-[100] flex items-center justify-center">
            <div className="bg-white p-4 rounded-lg shadow-lg flex items-center space-x-3">
              <Loader2 className="animate-spin text-stone-600" size={24} />
-             <span className="font-bold">Processing...</span>
+             <span className="font-bold text-stone-800">Processing...</span>
            </div>
         </div>
       )}
@@ -294,13 +296,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                         <div className="text-[10px] text-gray-400 font-mono">{b.id}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 inline-flex text-[10px] leading-5 font-bold rounded-full ${b.type === 'PRIVATE' ? 'bg-purple-100 text-purple-700' : 'bg-stone-100 text-stone-700'}`}>
+                        <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full ${b.type === 'PRIVATE' ? 'bg-purple-100 text-purple-700' : 'bg-stone-100 text-stone-700'}`}>
                           {b.type}
                         </span>
                         <div className="text-gray-500 mt-1">{b.adults + b.adultsNonAlc + b.children + b.infants}名</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 inline-flex text-[10px] leading-5 font-bold rounded-full 
+                        <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full 
                           ${b.status === BookingStatus.REQUESTED ? 'bg-yellow-100 text-yellow-700' : 
                             b.status === BookingStatus.CONFIRMED ? 'bg-blue-100 text-blue-700' : 
                             'bg-gray-100 text-gray-700'}`}>
@@ -338,7 +340,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center">
+                <h2 className="text-xl font-bold flex items-center text-stone-800">
                   <Mail className="mr-2 text-stone-700" size={20} />
                   自動メール テンプレート設定
                 </h2>
@@ -376,7 +378,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     <p className="text-[10px] text-gray-400 italic">利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"}</p>
                     <button 
                       onClick={() => handleSaveTemplate(`${activeTab}_SUBJECT`, emailTemplates[`${activeTab}_SUBJECT`])}
-                      disabled={isSavingTemplate}
+                      disabled={isProcessing}
                       className="text-xs bg-stone-700 text-white px-4 py-1.5 rounded-lg hover:bg-stone-800 transition disabled:opacity-50"
                     >
                       件名を保存
@@ -398,7 +400,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     </p>
                     <button 
                       onClick={() => handleSaveTemplate(`${activeTab}_BODY`, emailTemplates[`${activeTab}_BODY`])}
-                      disabled={isSavingTemplate}
+                      disabled={isProcessing}
                       className="text-xs bg-stone-700 text-white px-4 py-1.5 rounded-lg hover:bg-stone-800 transition disabled:opacity-50"
                     >
                       本文を保存
