@@ -39,6 +39,7 @@ function handleRequest(e) {
     else if (action === 'deleteBooking') result = deleteBooking(payload.id);
     else if (action === 'getEmailTemplate') result = getEmailTemplate();
     else if (action === 'updateEmailTemplate') result = updateEmailTemplate(payload);
+    else if (action === 'sendTestEmail') result = sendTestEmail(payload);
     else if (action === 'login') result = login(payload);
     else throw new Error('INVALID_ACTION: ' + action);
   } catch (err) {
@@ -78,7 +79,10 @@ function getSettingsSheet() {
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     sheet.appendRow(['Key', 'Value']);
-    // デフォルトテンプレートの投入
+  }
+  
+  // テンプレートが空の場合のみデフォルトを投入
+  if (sheet.getLastRow() <= 1) {
     const defaults = [
       ['RECEIVED_SUBJECT', '【Sangen】予約リクエストを受け付けました / Reservation Request Received'],
       ['RECEIVED_BODY', '{{name}} 様\n\nこの度はSangen Sake Experienceへのご予約リクエストありがとうございます。\n下記の日程でリクエストを承りました。\n\n日時：{{date}} {{time}}\nプラン：{{type}}\n\n現在、予約状況を確認しております。確定まで最大3営業日ほどお時間をいただく場合がございますので、そのままお待ちください。\n予約が確定しましたら、別途「確定メール」をお送りいたします。'],
@@ -243,6 +247,21 @@ function deleteBooking(id) {
 }
 
 /**
+ * テストメールを送信する
+ */
+function sendTestEmail(payload) {
+  const mockBooking = {
+    representative: { firstName: 'Test', lastName: 'User', email: Session.getActiveUser().getEmail() },
+    date: '202X-XX-XX',
+    time: '12:00',
+    type: 'PRIVATE',
+    refundAmount: 10000
+  };
+  sendTemplatedEmail(payload.type, mockBooking);
+  return { success: true, sentTo: mockBooking.representative.email };
+}
+
+/**
  * メールテンプレートを利用してメールを送信する
  */
 function sendTemplatedEmail(type, booking) {
@@ -251,7 +270,10 @@ function sendTemplatedEmail(type, booking) {
     const subjectRaw = templates[type + '_SUBJECT'];
     const bodyRaw = templates[type + '_BODY'];
     
-    if (!subjectRaw || !bodyRaw) return;
+    if (!subjectRaw || !bodyRaw) {
+      console.warn("Template missing for: " + type);
+      return;
+    }
 
     const name = booking.representative.lastName + ' ' + booking.representative.firstName;
     const date = booking.date;
@@ -273,10 +295,12 @@ function sendTemplatedEmail(type, booking) {
       .replace(/{{refund_amount}}/g, refund);
 
     GmailApp.sendEmail(booking.representative.email, subject, body, {
-      name: "Sangen Sake Experience" // 送信者名を表示
+      name: "Sangen Sake Experience"
     });
+    console.log("Email sent to: " + booking.representative.email + " (Type: " + type + ")");
   } catch (e) {
-    console.error("Email Sending Error: " + e.message);
+    console.error("Email Sending Error: " + e.toString());
+    throw new Error("メール送信エラー: " + e.toString());
   }
 }
 
@@ -284,7 +308,7 @@ function getEmailTemplate() {
   const data = getSettingsSheet().getDataRange().getValues();
   const templates = {};
   data.slice(1).forEach(row => {
-    templates[row[0]] = row[1];
+    if (row[0]) templates[row[0]] = row[1];
   });
   return templates;
 }
