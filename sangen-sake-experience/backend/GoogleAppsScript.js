@@ -1,6 +1,6 @@
 
 /**
- * Sangen Sake Experience - Backend Script (Advanced Admin & Stripe Refund)
+ * Sangen Sake Experience - Backend Script
  */
 
 const getProp = (key) => PropertiesService.getScriptProperties().getProperty(key);
@@ -36,6 +36,9 @@ function handleRequest(e) {
     else if (action === 'getBookings') result = getBookings();
     else if (action === 'createBooking') result = createBooking(payload);
     else if (action === 'updateStatus') result = updateBookingStatus(payload);
+    else if (action === 'deleteBooking') result = deleteBooking(payload.id);
+    else if (action === 'getEmailTemplate') result = getEmailTemplate();
+    else if (action === 'updateEmailTemplate') result = updateEmailTemplate(payload);
     else if (action === 'login') result = login(payload);
     else throw new Error('INVALID_ACTION: ' + action);
   } catch (err) {
@@ -44,16 +47,12 @@ function handleRequest(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * 接続テスト用関数
- */
 function testConfig() {
   try {
     const ssId = getProp('SPREADSHEET_ID');
-    const calId = getProp('CALENDAR_ID');
     if (!ssId) throw new Error("SPREADSHEET_ID is missing.");
     SpreadsheetApp.openById(ssId);
-    return { success: true, message: "Backend is active and connected to Spreadsheet." };
+    return { success: true, message: "Backend is active." };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -67,6 +66,20 @@ function getSheet() {
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     sheet.appendRow(['ID', 'Type', 'Date', 'Time', 'Status', 'Adults', 'NonAlc', 'Children', 'Infants', 'Price', 'Name', 'Email', 'JSONData', 'CreatedAt']);
+  }
+  return sheet;
+}
+
+function getSettingsSheet() {
+  const ssId = getProp('SPREADSHEET_ID');
+  const ss = SpreadsheetApp.openById(ssId);
+  const sheetName = 'Settings';
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(['Key', 'Value']);
+    sheet.appendRow(['AUTO_REPLY_SUBJECT', 'Thank you for your reservation request']);
+    sheet.appendRow(['AUTO_REPLY_BODY', 'Hello {{name}},\n\nWe have received your request for {{date}} at {{time}}.\nPlease wait for our confirmation email.']);
   }
   return sheet;
 }
@@ -114,27 +127,17 @@ function createBooking(payload) {
   
   const id = 'bk_' + new Date().getTime();
   const now = new Date();
-  const createdAtISO = now.toISOString(); // 標準的なISO形式で保存
+  const createdAtISO = now.toISOString();
   const sheet = getSheet();
   
   payload.stripeSessionId = sessionId;
   payload.createdAt = createdAtISO;
 
   sheet.appendRow([
-    id, 
-    payload.type, 
-    payload.date, 
-    payload.time, 
-    'REQUESTED', 
-    payload.adults, 
-    payload.adultsNonAlc, 
-    payload.children, 
-    payload.infants, 
-    payload.totalPrice, 
-    payload.representative.lastName, 
-    payload.representative.email, 
-    JSON.stringify(payload), 
-    createdAtISO
+    id, payload.type, payload.date, payload.time, 'REQUESTED', 
+    payload.adults, payload.adultsNonAlc, payload.children, payload.infants, 
+    payload.totalPrice, payload.representative.lastName, payload.representative.email, 
+    JSON.stringify(payload), createdAtISO
   ]);
   
   return { success: true, id, checkoutUrl };
@@ -143,7 +146,6 @@ function createBooking(payload) {
 function createStripeSession(amount, email, returnUrl, key, date, time) {
   const jstTimeDisplay = date + " " + time + " (JST)";
   const description = "Reservation: " + jstTimeDisplay;
-  
   const options = {
     method: 'post',
     headers: { 'Authorization': 'Bearer ' + key },
@@ -158,34 +160,10 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
       'success_url': returnUrl + '?status=success',
       'cancel_url': returnUrl + '?status=cancel',
       'customer_email': email,
-      'payment_intent_data[description]': description,
-      'payment_intent_data[metadata][booking_time_jst]': jstTimeDisplay
     }
   };
   const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions', options);
   return JSON.parse(response.getContentText());
-}
-
-function refundStripePayment(sessionId, amount, key) {
-  if (!sessionId) return { success: false, error: 'No session ID' };
-  try {
-    const sessionRes = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + sessionId, {
-      headers: { 'Authorization': 'Bearer ' + key }
-    });
-    const session = JSON.parse(sessionRes.getContentText());
-    const piId = session.payment_intent;
-    if (!piId) return { success: false, error: 'Payment not completed yet' };
-
-    const refundOptions = {
-      method: 'post',
-      headers: { 'Authorization': 'Bearer ' + key },
-      payload: { 'payment_intent': piId, 'amount': String(Math.round(amount)) }
-    };
-    UrlFetchApp.fetch('https://api.stripe.com/v1/refunds', refundOptions);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
 }
 
 function getBookings() {
@@ -196,7 +174,7 @@ function getBookings() {
       let b = JSON.parse(r[12]);
       b.id = r[0]; 
       b.status = r[4]; 
-      b.createdAt = r[13]; // シートの作成日時を使用
+      b.createdAt = r[13];
       return b;
     } catch(e) { return null; }
   }).filter(b => b !== null);
@@ -205,27 +183,62 @@ function getBookings() {
 function updateBookingStatus(p) {
   const sheet = getSheet();
   const data = sheet.getDataRange().getValues();
-  const stripeKey = getProp('STRIPE_SECRET_KEY');
   const nowISO = new Date().toISOString();
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == p.id) {
       let bookingData = JSON.parse(data[i][12]);
-      if (p.status) sheet.getRange(i + 1, 5).setValue(p.status);
-      if (p.status === 'CONFIRMED') {
-        bookingData.confirmedAt = nowISO;
+      if (p.status) {
+        sheet.getRange(i + 1, 5).setValue(p.status);
+        bookingData.status = p.status;
+        if (p.status === 'CONFIRMED') bookingData.confirmedAt = nowISO;
+        if (p.status === 'CANCELLED') {
+          bookingData.cancelledAt = nowISO;
+          if (p.refundAmount !== undefined) bookingData.refundAmount = p.refundAmount;
+        }
       }
-      if (p.status === 'CANCELLED' && bookingData.stripeSessionId && stripeKey && p.refundAmount) {
-         refundStripePayment(bookingData.stripeSessionId, p.refundAmount, stripeKey);
-      }
-      if (p.status) bookingData.status = p.status;
-      if (p.secondaryStatus) bookingData.secondaryStatus = p.secondaryStatus;
-      if (p.notes) bookingData.adminNotes = p.notes;
+      if (p.secondaryStatus !== undefined) bookingData.secondaryStatus = p.secondaryStatus;
+      if (p.notes !== undefined) bookingData.adminNotes = p.notes;
+      
       sheet.getRange(i + 1, 13).setValue(JSON.stringify(bookingData));
       return { success: true };
     }
   }
   return { success: false };
+}
+
+function deleteBooking(id) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == id) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false };
+}
+
+function getEmailTemplate() {
+  const data = getSettingsSheet().getDataRange().getValues();
+  const templates = {};
+  data.slice(1).forEach(row => {
+    templates[row[0]] = row[1];
+  });
+  return templates;
+}
+
+function updateEmailTemplate(payload) {
+  const sheet = getSettingsSheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === payload.key) {
+      sheet.getRange(i + 1, 2).setValue(payload.value);
+      return { success: true };
+    }
+  }
+  sheet.appendRow([payload.key, payload.value]);
+  return { success: true };
 }
 
 function login(p) { 
