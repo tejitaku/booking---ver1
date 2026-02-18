@@ -1,6 +1,6 @@
 
 /**
- * Sangen Sake Experience - Backend Script (Google Calendar Only Availability)
+ * Sangen Sake Experience - Backend Script (High-Performance Version)
  */
 
 const getProp = (key) => PropertiesService.getScriptProperties().getProperty(key);
@@ -24,12 +24,11 @@ function handleRequest(e) {
     const action = (postData && postData.action) ? postData.action : params.action;
     const payload = { ...params, ...(postData && postData.payload ? postData.payload : {}) };
 
-    // --- セキュリティチェック ---
     const token = getProp('APP_SECURITY_TOKEN');
     if (token) {
-      const receivedToken = (postData && postData.token) ? postData.token : (postData && postData.token ? postData.token : params.token);
+      const receivedToken = (postData && postData.token) ? postData.token : (params.token);
       if (receivedToken !== token) {
-        throw new Error('TOKEN_MISMATCH: 認証トークンが一致しません。');
+        throw new Error('TOKEN_MISMATCH');
       }
     }
 
@@ -38,7 +37,7 @@ function handleRequest(e) {
     } else if (action === 'getAvailability') {
       result = getAvailability(payload.date, payload.type);
     } else if (action === 'getMonthStatus') {
-      result = getMonthStatus(Number(payload.year), Number(payload.month), payload.type);
+      result = getMonthStatus(Number(payload.year), Number(payload.month));
     } else if (action === 'getBookings') {
       result = getBookings();
     } else if (action === 'createBooking') {
@@ -52,33 +51,25 @@ function handleRequest(e) {
     }
   } catch (err) {
     console.error(err);
-    result = { error: err.message, stack: err.stack };
+    result = { error: err.message };
   }
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * 接続テスト用
- */
 function testConfig() {
   const ssId = getProp('SPREADSHEET_ID');
-  if (!ssId) return { success: false, error: 'SPREADSHEET_ID が未設定です。' };
-  
+  if (!ssId) return { success: false, error: 'SPREADSHEET_ID is missing' };
   try {
     const ss = SpreadsheetApp.openById(ssId);
-    if (!ss) return { success: false, error: 'スプレッドシートが見つかりません。IDを確認してください。' };
-    const sheet = ss.getSheetByName('Bookings') || ss.insertSheet('Bookings');
     return { success: true, spreadsheetName: ss.getName() };
   } catch (e) {
-    return { success: false, error: 'スプレッドシートへのアクセス権限がないか、IDが不正です: ' + e.message };
+    return { success: false, error: e.message };
   }
 }
 
 function getSheet() {
   const ssId = getProp('SPREADSHEET_ID');
-  if (!ssId) throw new Error('CONFIG_ERROR: SPREADSHEET_ID が未設定です。');
   const ss = SpreadsheetApp.openById(ssId);
-  if (!ss) throw new Error('CONFIG_ERROR: スプレッドシートを開けませんでした。');
   const sheetName = 'Bookings';
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -96,56 +87,50 @@ function getCalendar() {
 }
 
 /**
- * 特定の日の空きスロットを計算 (カレンダーのみ参照)
+ * 1ヶ月分の空き状況を高速に取得
  */
-function calculateDaySlots(dateObj, calendar) {
-  const events = calendar.getEventsForDay(dateObj);
+function getMonthStatus(year, month) {
+  const results = {};
+  const calendar = getCalendar();
+  const tz = Session.getScriptTimeZone();
   
-  // 終日イベントではないイベントを「予約枠」として扱う
+  // 指定月の全イベントを一度に取得
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0);
+  const endDate = new Date(year, month, 0, 23, 59, 59);
+  const events = calendar.getEvents(startDate, endDate);
+  
+  // 日付ごとのイベント有無をマップ化
+  events.forEach(event => {
+    if (event.isAllDayEvent()) return; // 終日イベントは枠として扱わない
+    const dateStr = Utilities.formatDate(event.getStartTime(), tz, "yyyy-MM-dd");
+    results[dateStr] = true;
+  });
+
+  // 全ての日付を網羅 (イベントがない日は false)
+  const daysInMonth = endDate.getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dStr = year + "-" + String(month).padStart(2, '0') + "-" + String(d).padStart(2, '0');
+    if (!results[dStr]) results[dStr] = false;
+  }
+  
+  return results;
+}
+
+function getAvailability(dateStr) {
+  const dateObj = new Date(dateStr);
+  const calendar = getCalendar();
+  const events = calendar.getEventsForDay(dateObj);
+  const tz = Session.getScriptTimeZone();
+  
   const slots = events.filter(e => !e.isAllDayEvent()).map(event => {
-    const start = event.getStartTime();
-    const timeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), "HH:mm");
-    
-    // スプレッドシートは見ないので、カレンダーにイベントがある＝予約可能とする
-    // 満席の場合はカレンダーからイベントを消す運用を想定
     return { 
-      time: timeStr, 
+      time: Utilities.formatDate(event.getStartTime(), tz, "HH:mm"), 
       available: true, 
-      currentGroupCount: 0 // スプレッドシートを見ないので常に0
+      currentGroupCount: 0 
     };
   });
   
   return slots.sort((a, b) => a.time.localeCompare(b.time));
-}
-
-function getAvailability(dateStr, type) {
-  const dateObj = new Date(dateStr);
-  const calendar = getCalendar();
-  return calculateDaySlots(dateObj, calendar);
-}
-
-/**
- * 1ヶ月分の空き状況（カレンダー上の斜線用）を判定
- */
-function getMonthStatus(year, month, type) {
-  const results = {};
-  const calendar = getCalendar();
-  
-  const endDate = new Date(year, month, 0);
-  const daysInMonth = endDate.getDate();
-
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateObj = new Date(year, month - 1, d);
-    const dateStr = Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
-    
-    // その日のスロットを取得
-    const slots = calculateDaySlots(dateObj, calendar);
-    
-    // スロットが1つ以上あれば予約可能日（斜線なし）、なければ予約不可（斜線あり）
-    results[dateStr] = slots.length > 0;
-  }
-  
-  return results;
 }
 
 function createBooking(payload) {
@@ -184,7 +169,7 @@ function createStripeSession(amount, email, returnUrl, key) {
   return JSON.parse(response.getContentText());
 }
 
-function fetchBookingsFromSheet() {
+function getBookings() {
   try {
     const sheet = getSheet();
     const rows = sheet.getDataRange().getValues();
@@ -199,7 +184,6 @@ function fetchBookingsFromSheet() {
   } catch (e) { return []; }
 }
 
-function getBookings() { return fetchBookingsFromSheet(); }
 function login(p) { return (p.email === 'admin@sangen.com' && p.password === 'sake') ? { success: true } : { success: false }; }
 
 function updateBookingStatus(p) {
@@ -218,5 +202,5 @@ function updateBookingStatus(p) {
       return { success: true };
     }
   }
-  return { success: false, error: 'Booking ID not found' };
+  return { success: false };
 }
