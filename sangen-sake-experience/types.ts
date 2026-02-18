@@ -39,9 +39,11 @@ export interface Booking {
   representative: GuestInfo;
   guests: GuestInfo[];
   createdAt: string;
-  confirmedAt?: string; // 追加
+  confirmedAt?: string;
+  cancelledAt?: string; // キャンセル日時
+  refundAmount?: number; // 返金予定額
   adminNotes?: string;
-  stripeSessionId?: string; // セッションIDを保存
+  stripeSessionId?: string;
 }
 
 export interface CalendarEvent {
