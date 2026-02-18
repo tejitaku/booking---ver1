@@ -1,3 +1,4 @@
+
 export enum ReservationType {
   PRIVATE = 'PRIVATE',
   GROUP = 'GROUP'
@@ -17,8 +18,8 @@ export type SecondaryStatus = 'ARRIVED' | 'NO_SHOW' | '';
 export interface GuestInfo {
   firstName: string;
   lastName: string;
-  email?: string; // Only for representative
-  phone?: string; // Only for representative
+  email?: string;
+  phone?: string;
   dietaryRestrictions?: string;
   country?: string;
 }
@@ -26,26 +27,27 @@ export interface GuestInfo {
 export interface Booking {
   id: string;
   type: ReservationType;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:mm
-  adults: number; // 20+
-  adultsNonAlc: number; // 13+
-  children: number; // 5-12
-  infants: number; // 0-4
+  date: string;
+  time: string;
+  adults: number;
+  adultsNonAlc: number;
+  children: number;
+  infants: number;
   totalPrice: number;
   status: BookingStatus;
   secondaryStatus?: SecondaryStatus;
   representative: GuestInfo;
-  guests: GuestInfo[]; // Excluding representative
-  createdAt: string; // ISO String
+  guests: GuestInfo[];
+  createdAt: string;
+  confirmedAt?: string; // 追加
   adminNotes?: string;
-  stripePaymentId?: string; // Mock payment ID
+  stripeSessionId?: string; // セッションIDを保存
 }
 
 export interface CalendarEvent {
   id: string;
-  start: string; // ISO
-  end: string; // ISO
+  start: string;
+  end: string;
   title: string;
 }
 
