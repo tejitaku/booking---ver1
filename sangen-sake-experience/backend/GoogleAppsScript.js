@@ -113,9 +113,30 @@ function createBooking(payload) {
   }
   
   const id = 'bk_' + new Date().getTime();
+  const now = new Date();
+  const createdAtISO = now.toISOString(); // 標準的なISO形式で保存
   const sheet = getSheet();
+  
   payload.stripeSessionId = sessionId;
-  sheet.appendRow([id, payload.type, payload.date, payload.time, 'REQUESTED', payload.adults, payload.adultsNonAlc, payload.children, payload.infants, payload.totalPrice, payload.representative.lastName, payload.representative.email, JSON.stringify(payload), new Date()]);
+  payload.createdAt = createdAtISO;
+
+  sheet.appendRow([
+    id, 
+    payload.type, 
+    payload.date, 
+    payload.time, 
+    'REQUESTED', 
+    payload.adults, 
+    payload.adultsNonAlc, 
+    payload.children, 
+    payload.infants, 
+    payload.totalPrice, 
+    payload.representative.lastName, 
+    payload.representative.email, 
+    JSON.stringify(payload), 
+    createdAtISO
+  ]);
+  
   return { success: true, id, checkoutUrl };
 }
 
@@ -137,7 +158,6 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
       'success_url': returnUrl + '?status=success',
       'cancel_url': returnUrl + '?status=cancel',
       'customer_email': email,
-      // メタデータと説明文を両方にセット
       'payment_intent_data[description]': description,
       'payment_intent_data[metadata][booking_time_jst]': jstTimeDisplay
     }
@@ -174,7 +194,9 @@ function getBookings() {
   return rows.slice(1).map(r => {
     try {
       let b = JSON.parse(r[12]);
-      b.id = r[0]; b.status = r[4]; b.createdAt = r[13];
+      b.id = r[0]; 
+      b.status = r[4]; 
+      b.createdAt = r[13]; // シートの作成日時を使用
       return b;
     } catch(e) { return null; }
   }).filter(b => b !== null);
@@ -184,14 +206,14 @@ function updateBookingStatus(p) {
   const sheet = getSheet();
   const data = sheet.getDataRange().getValues();
   const stripeKey = getProp('STRIPE_SECRET_KEY');
-  const nowJST = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss");
+  const nowISO = new Date().toISOString();
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == p.id) {
       let bookingData = JSON.parse(data[i][12]);
       if (p.status) sheet.getRange(i + 1, 5).setValue(p.status);
       if (p.status === 'CONFIRMED') {
-        bookingData.confirmedAt = nowJST;
+        bookingData.confirmedAt = nowISO;
       }
       if (p.status === 'CANCELLED' && bookingData.stripeSessionId && stripeKey && p.refundAmount) {
          refundStripePayment(bookingData.stripeSessionId, p.refundAmount, stripeKey);
