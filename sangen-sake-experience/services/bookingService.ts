@@ -53,7 +53,7 @@ export const BookingService = {
     await fetchGasPost('updateStatus', { id, status, notes, refundAmount });
   },
   updateSecondaryStatus: async (id: string, status: SecondaryStatus): Promise<void> => {
-    await fetchGasPost('updateStatus', { id, secondaryStatus: status }),
+    await fetchGasPost('updateStatus', { id, secondaryStatus: status });
   },
   login: async (email: string, pass: string): Promise<boolean> => {
     const data = await fetchGasPost('login', { email, password: pass });
