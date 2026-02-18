@@ -1,6 +1,6 @@
 
 /**
- * Sangen Sake Experience - Backend Script (Robust Version)
+ * Sangen Sake Experience - Backend Script (Google Calendar Only Availability)
  */
 
 const getProp = (key) => PropertiesService.getScriptProperties().getProperty(key);
@@ -77,10 +77,8 @@ function testConfig() {
 function getSheet() {
   const ssId = getProp('SPREADSHEET_ID');
   if (!ssId) throw new Error('CONFIG_ERROR: SPREADSHEET_ID が未設定です。');
-
   const ss = SpreadsheetApp.openById(ssId);
-  if (!ss) throw new Error('CONFIG_ERROR: スプレッドシート(ID: ' + ssId + ')を開けませんでした。');
-
+  if (!ss) throw new Error('CONFIG_ERROR: スプレッドシートを開けませんでした。');
   const sheetName = 'Bookings';
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -97,38 +95,56 @@ function getCalendar() {
   return calendar;
 }
 
-function getAvailability(dateStr, type) {
-  const dateObj = new Date(dateStr);
-  const calendar = getCalendar();
+/**
+ * 特定の日の空きスロットを計算 (カレンダーのみ参照)
+ */
+function calculateDaySlots(dateObj, calendar) {
   const events = calendar.getEventsForDay(dateObj);
-  const bookings = fetchBookingsFromSheet().filter(b => b.date === dateStr && b.status !== 'CANCELLED' && b.status !== 'REJECTED');
   
+  // 終日イベントではないイベントを「予約枠」として扱う
   const slots = events.filter(e => !e.isAllDayEvent()).map(event => {
     const start = event.getStartTime();
     const timeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), "HH:mm");
-    const bookingsAtTime = bookings.filter(b => b.time === timeStr);
-    const totalPeople = bookingsAtTime.reduce((sum, b) => sum + (Number(b.adults)||0) + (Number(b.adultsNonAlc)||0) + (Number(b.children)||0) + (Number(b.infants)||0), 0);
-    const hasPrivate = bookingsAtTime.some(b => b.type === 'PRIVATE');
     
-    let available = true;
-    if (type === 'PRIVATE') {
-      if (bookingsAtTime.length > 0) available = false;
-    } else {
-      if (hasPrivate || totalPeople >= 6) available = false;
-    }
-    return { time: timeStr, available, currentGroupCount: totalPeople };
+    // スプレッドシートは見ないので、カレンダーにイベントがある＝予約可能とする
+    // 満席の場合はカレンダーからイベントを消す運用を想定
+    return { 
+      time: timeStr, 
+      available: true, 
+      currentGroupCount: 0 // スプレッドシートを見ないので常に0
+    };
   });
   
   return slots.sort((a, b) => a.time.localeCompare(b.time));
 }
 
+function getAvailability(dateStr, type) {
+  const dateObj = new Date(dateStr);
+  const calendar = getCalendar();
+  return calculateDaySlots(dateObj, calendar);
+}
+
+/**
+ * 1ヶ月分の空き状況（カレンダー上の斜線用）を判定
+ */
 function getMonthStatus(year, month, type) {
   const results = {};
-  const days = new Date(year, month, 0).getDate();
-  for(let d=1; d<=days; d++) {
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    results[dateStr] = true; 
+  const calendar = getCalendar();
+  
+  const endDate = new Date(year, month, 0);
+  const daysInMonth = endDate.getDate();
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateObj = new Date(year, month - 1, d);
+    const dateStr = Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    
+    // その日のスロットを取得
+    const slots = calculateDaySlots(dateObj, calendar);
+    
+    // スロットが1つ以上あれば予約可能日（斜線なし）、なければ予約不可（斜線あり）
+    results[dateStr] = slots.length > 0;
   }
+  
   return results;
 }
 
