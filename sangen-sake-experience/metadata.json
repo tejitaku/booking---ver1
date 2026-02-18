@@ -1,0 +1,5 @@
+{
+  "name": "Sangen Sake Experience",
+  "description": "Reservation system for Sake Tasting (Private & Group) with Stripe integration logic and Admin dashboard.",
+  "requestFramePermissions": []
+}
