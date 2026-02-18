@@ -44,6 +44,21 @@ function handleRequest(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * 接続テスト用関数
+ */
+function testConfig() {
+  try {
+    const ssId = getProp('SPREADSHEET_ID');
+    const calId = getProp('CALENDAR_ID');
+    if (!ssId) throw new Error("SPREADSHEET_ID is missing.");
+    SpreadsheetApp.openById(ssId);
+    return { success: true, message: "Backend is active and connected to Spreadsheet." };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 function getSheet() {
   const ssId = getProp('SPREADSHEET_ID');
   const ss = SpreadsheetApp.openById(ssId);
@@ -105,15 +120,16 @@ function createBooking(payload) {
 }
 
 function createStripeSession(amount, email, returnUrl, key, date, time) {
-  // Stripeダッシュボードで見やすいように説明文を作成
-  const description = "Sangen Experience: " + date + " " + time + " (JST)";
+  const jstTimeDisplay = date + " " + time + " (JST)";
+  const description = "Reservation: " + jstTimeDisplay;
+  
   const options = {
     method: 'post',
     headers: { 'Authorization': 'Bearer ' + key },
     payload: {
       'payment_method_types[]': 'card',
       'line_items[0][price_data][currency]': 'jpy',
-      'line_items[0][price_data][product_data][name]': 'Sangen Experience',
+      'line_items[0][price_data][product_data][name]': 'Sangen Sake Experience',
       'line_items[0][price_data][product_data][description]': description,
       'line_items[0][price_data][unit_amount]': String(Math.round(amount)),
       'line_items[0][quantity]': '1',
@@ -121,7 +137,9 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
       'success_url': returnUrl + '?status=success',
       'cancel_url': returnUrl + '?status=cancel',
       'customer_email': email,
-      'payment_intent_data[description]': description // これによりダッシュボードの支払い一覧にJST時間が表示される
+      // メタデータと説明文を両方にセット
+      'payment_intent_data[description]': description,
+      'payment_intent_data[metadata][booking_time_jst]': jstTimeDisplay
     }
   };
   const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions', options);
