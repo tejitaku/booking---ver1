@@ -1,83 +1,55 @@
 
 import { Booking, BookingStatus, ReservationType, AvailabilitySlot, SecondaryStatus } from '../types';
 
-// =============================================================================
-// CONFIGURATION
-// =============================================================================
-
-/**
- * 外部から注入される設定（環境変数）を安全に取得します。
- * process.env への直接アクセスは、環境によっては eval() を含むポリフィルを誘発するため、
- * typeof チェックと globalThis を使用した安全なアクセスに切り替えます。
- */
-const getEnvVar = (key: string): string => {
+const getEnv = (key: string): string => {
+  // @ts-ignore
+  const env = import.meta.env;
+  if (env && env[key]) return env[key];
   try {
-    // 1. globalThis (window) に直接定義されている可能性をチェック
-    const globalVal = (globalThis as any)?.[key];
-    if (typeof globalVal === 'string') return globalVal;
-    
-    // 2. process.env の安全なチェック
-    if (typeof process !== 'undefined' && process?.env) {
-      const val = process.env[key];
-      if (typeof val === 'string') return val;
-    }
-
-    // 3. Viteの環境変数の可能性
-    // @ts-ignore
-    const viteVal = import.meta.env?.[key];
-    if (typeof viteVal === 'string') return viteVal;
-
-    return '';
-  } catch (e) {
+    return (globalThis as any)?.[key] || (typeof process !== 'undefined' ? process.env[key] : '') || '';
+  } catch {
     return '';
   }
 };
 
-// API_URL の取得
-export const API_URL = getEnvVar('VITE_GAS_URL') || '';
-
-const API_CONFIG = {
-  url: API_URL,
-  token: getEnvVar('VITE_SECURITY_TOKEN') || ''
-};
-
-// =============================================================================
-// SERVICE IMPLEMENTATION
-// =============================================================================
+export const API_URL = getEnv('VITE_GAS_URL');
+const SECURITY_TOKEN = getEnv('VITE_SECURITY_TOKEN');
 
 const fetchGasPost = async (action: string, payload: any = {}) => {
-  if (!API_CONFIG.url) {
-    console.warn("API URL (VITE_GAS_URL) is not configured in environment variables.");
-    throw new Error("API URLが設定されていません。環境変数を確認してください。");
+  if (!API_URL) {
+    throw new Error("VITE_GAS_URL が設定されていません。");
   }
   
   try {
-    const res = await fetch(API_CONFIG.url, {
+    const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ 
-        action, 
-        payload,
-        token: API_CONFIG.token 
-      }),
+      body: JSON.stringify({ action, payload, token: SECURITY_TOKEN }),
       redirect: 'follow'
     });
     
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`GAS通信エラー: ${res.status}`);
 
     const text = await res.text();
-    const data = JSON.parse(text);
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error("GASからの応答がJSONではありません。デプロイの権限設定を確認してください。");
+    }
+
     if (data.error) throw new Error(data.error);
     return data;
-  } catch (error) {
-    console.error("GAS API Connection Error:", error);
-    throw new Error("サーバーとの通信に失敗しました。URLや合言葉を確認してください。");
+  } catch (error: any) {
+    console.error("GAS Connection Error:", error);
+    throw error;
   }
 };
 
 export const BookingService = {
+  testConfig: async () => {
+    return await fetchGasPost('testConfig');
+  },
   getAvailability: async (date: string, type: ReservationType): Promise<AvailabilitySlot[]> => {
     return await fetchGasPost('getAvailability', { date, type });
   },
