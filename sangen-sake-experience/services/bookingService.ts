@@ -1,28 +1,65 @@
+
 import { Booking, BookingStatus, ReservationType, AvailabilitySlot, SecondaryStatus } from '../types';
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
+
 /**
- * GASの「ウェブアプリURL」
- * 提供されたURLをデフォルトとして設定しました。
+ * 外部から注入される設定（環境変数）を安全に取得します。
+ * process.env への直接アクセスは、環境によっては eval() を含むポリフィルを誘発するため、
+ * typeof チェックと globalThis を使用した安全なアクセスに切り替えます。
  */
-export const API_URL = (import.meta.env?.VITE_GAS_URL as string) || 'https://script.google.com/macros/s/AKfycbwc3T-cqgKYlPvedc8cvrheq3Ww-f36pkxshDQWeRpmMB3DVtzg2ZofSnO31EPUHa0t1w/exec'; 
+const getEnvVar = (key: string): string => {
+  try {
+    // 1. globalThis (window) に直接定義されている可能性をチェック
+    const globalVal = (globalThis as any)?.[key];
+    if (typeof globalVal === 'string') return globalVal;
+    
+    // 2. process.env の安全なチェック
+    if (typeof process !== 'undefined' && process?.env) {
+      const val = process.env[key];
+      if (typeof val === 'string') return val;
+    }
+
+    // 3. Viteの環境変数の可能性
+    // @ts-ignore
+    const viteVal = import.meta.env?.[key];
+    if (typeof viteVal === 'string') return viteVal;
+
+    return '';
+  } catch (e) {
+    return '';
+  }
+};
+
+// API_URL の取得
+export const API_URL = getEnvVar('VITE_GAS_URL') || '';
+
+const API_CONFIG = {
+  url: API_URL,
+  token: getEnvVar('VITE_SECURITY_TOKEN') || ''
+};
 
 // =============================================================================
 // SERVICE IMPLEMENTATION
 // =============================================================================
 
 const fetchGasPost = async (action: string, payload: any = {}) => {
-  if (!API_URL) {
-    throw new Error("API_URLが設定されていません。GASのURLを確認してください。");
+  if (!API_CONFIG.url) {
+    console.warn("API URL (VITE_GAS_URL) is not configured in environment variables.");
+    throw new Error("API URLが設定されていません。環境変数を確認してください。");
   }
   
   try {
-    const res = await fetch(API_URL, {
+    const res = await fetch(API_CONFIG.url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, payload }),
+      body: JSON.stringify({ 
+        action, 
+        payload,
+        token: API_CONFIG.token 
+      }),
       redirect: 'follow'
     });
     
@@ -35,8 +72,8 @@ const fetchGasPost = async (action: string, payload: any = {}) => {
     if (data.error) throw new Error(data.error);
     return data;
   } catch (error) {
-    console.error("GAS API Error:", error);
-    throw new Error("Backend API connection failed. GASのURLが正しいか、公開設定が「全員(Anyone)」になっているか確認してください。");
+    console.error("GAS API Connection Error:", error);
+    throw new Error("サーバーとの通信に失敗しました。URLや合言葉を確認してください。");
   }
 };
 
