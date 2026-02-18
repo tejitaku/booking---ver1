@@ -154,13 +154,31 @@ function fetchBookingsFromSheet() {
     } catch(e) { return null; }
   }).filter(b => b !== null);
 }
+
+// Updated to robustly handle primary status, secondary status, and admin notes
 function updateBookingStatus(p) {
   const sheet = getSheet();
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == p.id) {
-      sheet.getRange(i + 1, 5).setValue(p.status);
+      // Update primary status in column 5 if provided
+      if (p.status) {
+        sheet.getRange(i + 1, 5).setValue(p.status);
+      }
+      
+      // Update the detailed JSON in column 13 (index 12) to persist notes and secondary status
+      try {
+        let bookingData = JSON.parse(data[i][12]);
+        if (p.status) bookingData.status = p.status;
+        if (p.secondaryStatus) bookingData.secondaryStatus = p.secondaryStatus;
+        if (p.notes) bookingData.adminNotes = p.notes;
+        sheet.getRange(i + 1, 13).setValue(JSON.stringify(bookingData));
+      } catch (e) {
+        console.error("Failed to update JSON column for ID: " + p.id);
+      }
+      
       return { success: true };
     }
   }
+  return { success: false, error: 'Booking ID not found' };
 }
