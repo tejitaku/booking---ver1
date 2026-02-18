@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Booking, BookingStatus, SecondaryStatus } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculateCancellationFee } from '../utils/pricing';
-import { Eye, Check, X, Ban, Search, LogOut, Loader2, Clock, Calendar, Trash2, Mail, Settings, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Eye, Check, X, Ban, Search, LogOut, Loader2, Clock, Calendar, Trash2, Mail, Settings, UserCheck, ChevronDown, ChevronUp, Send } from 'lucide-react';
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -80,7 +80,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await loadBookings();
       if (selectedBooking) setSelectedBooking(null);
     } catch (e) {
-      alert("Error updating status");
+      alert("Error updating status: " + e);
     } finally {
       setIsProcessing(false);
     }
@@ -134,7 +134,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await loadBookings();
       setShowStripeNotice(true);
     } catch (e) {
-      alert("Cancellation error");
+      alert("Cancellation error: " + e);
     } finally {
       setIsProcessing(false);
     }
@@ -146,9 +146,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await BookingService.updateEmailTemplate(key, value);
       await loadEmailTemplates();
     } catch (e) {
-      alert("テンプレートの保存に失敗しました");
+      alert("テンプレートの保存に失敗しました: " + e);
     } finally {
       setIsSavingTemplate(false);
+    }
+  };
+
+  const handleTestSend = async () => {
+    setIsProcessing(true);
+    try {
+      const res = await BookingService.sendTestEmail(activeTab);
+      alert(`${res.sentTo} 宛にテストメールを送信しました。受信トレイ（または迷惑メールフォルダ）を確認してください。`);
+    } catch (e) {
+      alert("テスト送信に失敗しました。GASの権限設定を確認してください。\nError: " + e);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -325,10 +337,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <h2 className="text-xl font-bold mb-6 flex items-center">
-                <Mail className="mr-2 text-stone-700" size={20} />
-                自動メール テンプレート設定
-              </h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold flex items-center">
+                  <Mail className="mr-2 text-stone-700" size={20} />
+                  自動メール テンプレート設定
+                </h2>
+                <button 
+                  onClick={handleTestSend}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-100 transition"
+                >
+                  <Send size={16} />
+                  <span>現在のタブの内容をテスト送信</span>
+                </button>
+              </div>
 
               <div className="flex border-b mb-6">
                 {templateTypes.map(t => (
@@ -390,9 +411,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start">
                <Settings size={18} className="text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
                <div className="text-xs text-blue-800 space-y-1">
-                 <p className="font-bold">メール送信に関する注意点：</p>
-                 <p>・メールはGoogle Apps Scriptを実行しているアカウント（または設定済みの名前エイリアス）から送信されます。</p>
-                 <p>・独自ドメインから送信するには、Gmailの設定で該当ドメインのメールアドレスを「アカウントとインポート ＞ 名前」に追加し、デフォルト送信に設定するか、スクリプトの実行ユーザーとして設定してください。</p>
+                 <p className="font-bold underline">メールが届かない場合のチェックリスト：</p>
+                 <p>1. GASエディタで「デプロイ ＞ 新しいデプロイ」を実行し、権限の承認を再度行ってください。</p>
+                 <p>2. 上記の「テスト送信」ボタンを押し、自分宛にメールが届くか確認してください。</p>
+                 <p>3. 迷惑メールフォルダを確認してください。</p>
+                 <p>4. 独自ドメイン送信は、Gmailの「アカウントとインポート」設定でエイリアス登録が必要です。</p>
                </div>
             </div>
           </div>
