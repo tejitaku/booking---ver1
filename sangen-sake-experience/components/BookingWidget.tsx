@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import { useState, useEffect } from 'react';
 import { ReservationType, AvailabilitySlot } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculatePriceBreakdown } from '../utils/pricing';
@@ -19,9 +20,9 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
   
-  // Cache for month availability: { "2023-10-01": true (available), "2023-10-02": false (full/closed) }
+  // Cache for month availability: { "2023-10-01": true (available) }
   const [monthStatus, setMonthStatus] = useState<Record<string, boolean>>({});
-  const [loadingMonth, setLoadingMonth] = useState(false);
+  const [loadingMonth, setLoadingMonth] = useState(true); // 初期値をtrueに
 
   // Guest Counts
   const [adults, setAdults] = useState(0);
@@ -34,15 +35,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const totalPeople = adults + adultsNonAlc + children + infants;
   const priceDetails = calculatePriceBreakdown(reservationType, adults, adultsNonAlc, children, infants);
 
-  // Find currently selected slot data
   const currentSlot = slots.find(s => s.time === selectedTime);
-  
-  // Calculate remaining capacity for the selected slot (for Groups)
   const remainingCapacity = (reservationType === ReservationType.GROUP && currentSlot)
     ? Math.max(0, MAX_CAPACITY - (currentSlot.currentGroupCount || 0))
     : MAX_CAPACITY;
 
-  // Fetch slots when date or type changes
   useEffect(() => {
     if (selectedDate) {
       setLoadingSlots(true);
@@ -50,7 +47,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
       BookingService.getAvailability(selectedDate, reservationType)
         .then(data => {
           setSlots(data);
-          setSelectedTime(''); // Reset time on date change
+          setSelectedTime('');
         })
         .catch(err => {
           console.error(err);
@@ -61,7 +58,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     }
   }, [selectedDate, reservationType]);
 
-  // Fetch Month Status when viewDate changes
   useEffect(() => {
     setLoadingMonth(true);
     const year = viewDate.getFullYear();
@@ -69,9 +65,12 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     
     BookingService.getMonthStatus(year, month, reservationType)
       .then(statusMap => {
-        setMonthStatus(statusMap);
+        setMonthStatus(statusMap || {});
       })
-      .catch(e => console.error("Failed to fetch month status", e))
+      .catch(e => {
+        console.error("Failed to fetch month status", e);
+        setMonthStatus({});
+      })
       .finally(() => setLoadingMonth(false));
   }, [viewDate, reservationType]);
 
@@ -153,8 +152,9 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 const isPast = dateObj < today;
                 const isSelected = selectedDate === dateStr;
                 
-                // Determine if unavailable (Full or Closed)
-                const isUnavailable = !isPast && monthStatus[dateStr] === false;
+                // Determine if unavailable:
+                // 過去ではなく、かつ読み込みが完了しており、かつmonthStatusに存在しない(undefined)場合は不可日
+                const isUnavailable = !isPast && !loadingMonth && monthStatus[dateStr] !== true;
 
                 let buttonClass = `h-9 w-9 rounded-full flex items-center justify-center text-sm transition-all duration-200 relative overflow-hidden `;
                 
@@ -163,10 +163,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 } else if (isPast) {
                     buttonClass += 'text-gray-300 cursor-not-allowed';
                 } else if (isUnavailable) {
-                    // Unavailable styling: Gray text, Gray diagonal slash
                     buttonClass += 'text-gray-400 font-medium cursor-not-allowed';
                 } else {
-                    // Available
                     buttonClass += 'hover:bg-stone-100 text-gray-700 hover:scale-105';
                 }
 
@@ -180,14 +178,14 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                     >
                         <span className="relative z-10">{d}</span>
                         {isUnavailable && (
-                            <svg className="absolute inset-0 w-full h-full pointer-events-none p-[2px]" viewBox="0 0 100 100">
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none p-[1px]" viewBox="0 0 100 100">
                                 <line 
-                                  x1="20" y1="20" 
-                                  x2="80" y2="80" 
-                                  stroke="#9ca3af" // tailwind gray-400
-                                  strokeWidth="6" 
+                                  x1="25" y1="25" 
+                                  x2="75" y2="75" 
+                                  stroke="#d1d5db" // gray-300
+                                  strokeWidth="4" 
                                   strokeLinecap="round" 
-                                  className="opacity-80"
+                                  className="opacity-90"
                                 />
                             </svg>
                         )}
@@ -199,7 +197,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     );
   };
 
-  // Validation
   const canRequest = 
     selectedDate && 
     selectedTime && 
@@ -221,16 +218,12 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
 
   return (
     <div className="max-w-md mx-auto bg-white shadow-xl rounded-lg overflow-hidden border border-gray-100">
-      
       <div className="p-6 space-y-6">
-        
-        {/* Date Selection */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Select Date</label>
           {renderCalendar()}
         </div>
 
-        {/* Time Selection */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Select Time</label>
           {loadingSlots ? (
@@ -241,9 +234,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
             <div className="p-4 bg-red-50 text-red-600 text-sm rounded border border-red-200 flex flex-col items-center text-center">
               <AlertCircle size={20} className="mb-2" />
               <p>Connection Error: {fetchError}</p>
-              <p className="text-xs mt-1 text-gray-500">Please check your internet or try again later.</p>
               <button 
-                onClick={() => setSelectedDate(selectedDate)} // Trigger useEffect again
+                onClick={() => setSelectedDate(selectedDate)}
                 className="mt-2 flex items-center text-xs font-bold uppercase tracking-wide bg-white px-3 py-1 rounded border border-red-300 hover:bg-red-50"
               >
                 <RefreshCw size={12} className="mr-1" /> Retry
@@ -282,8 +274,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
               })}
               {slots.length === 0 && selectedDate && !fetchError && (
                 <div className="col-span-3 text-sm text-gray-500 text-center bg-gray-50 p-4 rounded">
-                    No slots available for this date.<br/>
-                    <span className="text-xs">Please try another date.</span>
+                    No slots available for this date.
                 </div>
               )}
               {slots.length === 0 && !selectedDate && (
@@ -293,10 +284,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           )}
         </div>
 
-        {/* Guests */}
         <div className="space-y-3 border-t pt-4">
           <label className="block text-sm font-semibold text-gray-700">Guests</label>
-          
           {[
             { label: 'Adults (20+)', val: adults, set: setAdults },
             { label: 'Alcohol-Free (13+)', val: adultsNonAlc, set: setAdultsNonAlc },
@@ -343,10 +332,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           )}
         </div>
 
-        {/* Breakdown & Total */}
         <div className="border-t pt-4 mt-6">
-          
-          {/* Price Breakdown */}
           {totalPeople > 0 && (
             <div className="mb-4 space-y-1 text-sm text-gray-600">
                {adults > 0 && (
@@ -367,9 +353,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                    <span>¥{priceDetails.childTotal.toLocaleString()}</span>
                  </div>
                )}
-               
                <div className="border-t border-gray-100 my-2 pt-1"></div>
-               
                <div className="flex justify-between">
                  <span>Subtotal</span>
                  <span>¥{priceDetails.subTotal.toLocaleString()}</span>
@@ -380,12 +364,10 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                </div>
             </div>
           )}
-
           <div className="flex justify-between items-end mb-4">
             <span className="font-bold text-gray-700">Total (Inc. Tax)</span>
             <span className="serif font-bold text-2xl text-stone-900">¥{priceDetails.total.toLocaleString()}</span>
           </div>
-
           <button
             onClick={handleSubmit}
             disabled={!canRequest}
