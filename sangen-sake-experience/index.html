@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
   <head>
@@ -9,6 +10,13 @@
     <style>
       body { font-family: 'Noto Sans JP', sans-serif; }
       h1, h2, h3, .serif { font-family: 'Playfair Display', serif; }
+      @keyframes spin-slow {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .animate-spin-slow {
+        animation: spin-slow 8s linear infinite;
+      }
     </style>
   <script type="importmap">
 {
@@ -22,7 +30,6 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-stone-50">
     <div id="root"></div>
