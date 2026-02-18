@@ -16,9 +16,7 @@ export const API_URL = getEnv('VITE_GAS_URL');
 const SECURITY_TOKEN = getEnv('VITE_SECURITY_TOKEN');
 
 const fetchGasPost = async (action: string, payload: any = {}) => {
-  if (!API_URL) {
-    throw new Error("VITE_GAS_URL が設定されていません。");
-  }
+  if (!API_URL) throw new Error("VITE_GAS_URL is not configured.");
   
   try {
     const res = await fetch(API_URL, {
@@ -28,16 +26,9 @@ const fetchGasPost = async (action: string, payload: any = {}) => {
       redirect: 'follow'
     });
     
-    if (!res.ok) throw new Error(`GAS通信エラー: ${res.status}`);
-
+    if (!res.ok) throw new Error(`GAS Error: ${res.status}`);
     const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error("GASからの応答がJSONではありません。デプロイの権限設定を確認してください。");
-    }
-
+    const data = JSON.parse(text);
     if (data.error) throw new Error(data.error);
     return data;
   } catch (error: any) {
@@ -47,15 +38,9 @@ const fetchGasPost = async (action: string, payload: any = {}) => {
 };
 
 export const BookingService = {
-  testConfig: async () => {
-    return await fetchGasPost('testConfig');
-  },
-  getAvailability: async (date: string, type: ReservationType): Promise<AvailabilitySlot[]> => {
-    return await fetchGasPost('getAvailability', { date, type });
-  },
-  getMonthStatus: async (year: number, month: number, type: ReservationType): Promise<Record<string, boolean>> => {
-    return await fetchGasPost('getMonthStatus', { year, month, type });
-  },
+  testConfig: async () => fetchGasPost('testConfig'),
+  getAvailability: async (date: string, type: ReservationType): Promise<AvailabilitySlot[]> => fetchGasPost('getAvailability', { date, type }),
+  getMonthStatus: async (year: number, month: number, type: ReservationType): Promise<Record<string, boolean>> => fetchGasPost('getMonthStatus', { year, month, type }),
   createBooking: async (bookingData: any): Promise<{ booking: Booking, checkoutUrl?: string }> => {
     const data = await fetchGasPost('createBooking', bookingData);
     return { 
@@ -63,14 +48,12 @@ export const BookingService = {
       checkoutUrl: data.checkoutUrl 
     };
   },
-  getBookings: async (): Promise<Booking[]> => {
-    return await fetchGasPost('getBookings');
-  },
-  updateBookingStatus: async (id: string, status: BookingStatus, notes?: string): Promise<void> => {
-    await fetchGasPost('updateStatus', { id, status, notes });
+  getBookings: async (): Promise<Booking[]> => fetchGasPost('getBookings'),
+  updateBookingStatus: async (id: string, status: BookingStatus, notes?: string, refundAmount?: number): Promise<void> => {
+    await fetchGasPost('updateStatus', { id, status, notes, refundAmount });
   },
   updateSecondaryStatus: async (id: string, status: SecondaryStatus): Promise<void> => {
-    await fetchGasPost('updateStatus', { id, secondaryStatus: status });
+    await fetchGasPost('updateStatus', { id, secondaryStatus: status }),
   },
   login: async (email: string, pass: string): Promise<boolean> => {
     const data = await fetchGasPost('login', { email, password: pass });
