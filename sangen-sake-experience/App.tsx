@@ -24,8 +24,33 @@ const App: React.FC = () => {
     if (window.location.hash === '#admin') setRoute('admin');
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('type')?.toLowerCase() === 'group') setWidgetType(ReservationType.GROUP);
-    if (params.get('embed') === 'true') setIsEmbedMode(true);
+    
+    // 埋め込みモードの判定
+    const embed = params.get('embed') === 'true';
+    setIsEmbedMode(embed);
+
+    // URLパラメータからルートを判定
+    const urlRoute = params.get('route');
+    if (urlRoute) setRoute(urlRoute);
+
+    // 予約タイプの判定
+    if (params.get('type')?.toUpperCase() === 'GROUP') setWidgetType(ReservationType.GROUP);
+    else if (params.get('type')?.toUpperCase() === 'PRIVATE') setWidgetType(ReservationType.PRIVATE);
+
+    // フォーム表示用にURLからデータをパース
+    if (urlRoute === 'form') {
+      const initial: Partial<Booking> = {
+        type: (params.get('type')?.toUpperCase() as ReservationType) || ReservationType.PRIVATE,
+        date: params.get('date') || '',
+        time: params.get('time') || '',
+        adults: parseInt(params.get('adults') || '0'),
+        adultsNonAlc: parseInt(params.get('adultsNonAlc') || '0'),
+        children: parseInt(params.get('children') || '0'),
+        infants: parseInt(params.get('infants') || '0'),
+        totalPrice: parseInt(params.get('totalPrice') || '0'),
+      };
+      setBookingData(initial);
+    }
 
     const status = params.get('status');
     const sessionId = params.get('session_id');
@@ -37,7 +62,6 @@ const App: React.FC = () => {
         handleFinalize(sessionId);
       }
     } else if (status === 'success') {
-      // session_idがないがsuccessステータスの場合（基本的にはありえないが念のため）
       setRoute('success');
     }
 
@@ -46,23 +70,40 @@ const App: React.FC = () => {
 
   const handleFinalize = async (sessionId: string) => {
     setIsFinalizing(true);
-    setRoute('success'); // ローダーを表示するためにsuccess画面に切り替え
-    
-    console.log("Starting verification for session:", sessionId);
+    setRoute('success');
     
     try {
       const result = await BookingService.finalizeBooking(sessionId);
-      console.log("Verification result:", result);
-      
       if (!result.success) {
         setFinalizeError(result.error || "Payment verification failed. Please contact us.");
       }
-      // success: true の場合は、finalizeErrorがnullのままなので、自動的に完了画面が表示される
     } catch (e: any) {
-      console.error("Verification error:", e);
       setFinalizeError(e.message || "An unexpected error occurred. Please contact support.");
     } finally {
       setIsFinalizing(false);
+    }
+  };
+
+  const handleProceed = (data: any) => {
+    if (isEmbedMode) {
+      // 埋め込みモードの場合は新規ウィンドウでフォームを開く
+      const baseUrl = window.location.origin + window.location.pathname;
+      const params = new URLSearchParams({
+        route: 'form',
+        type: data.type,
+        date: data.date,
+        time: data.time,
+        adults: data.adults.toString(),
+        adultsNonAlc: data.adultsNonAlc.toString(),
+        children: data.children.toString(),
+        infants: data.infants.toString(),
+        totalPrice: data.totalPrice.toString(),
+      });
+      window.open(`${baseUrl}?${params.toString()}`, '_blank');
+    } else {
+      // 通常モードはそのまま遷移
+      setBookingData(data);
+      setRoute('form');
     }
   };
 
@@ -126,7 +167,7 @@ const App: React.FC = () => {
             <BookingForm initialData={bookingData} onBack={() => setRoute('widget')} onSubmit={handleFormSubmit} />
          ) : (
             <>
-              <BookingWidget reservationType={widgetType} onProceed={(data) => { setBookingData(data); setRoute('form'); }} />
+              <BookingWidget reservationType={widgetType} onProceed={handleProceed} />
             </>
          )}
        </div>
