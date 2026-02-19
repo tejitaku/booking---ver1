@@ -1,5 +1,6 @@
 
-import { useState, useEffect } from 'react';
+// Add React to the imports to resolve namespace errors in FC and FormEvent types
+import React, { useState, useEffect } from 'react';
 import { Booking, BookingStatus, SecondaryStatus } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculateCancellationFee } from '../utils/pricing';
