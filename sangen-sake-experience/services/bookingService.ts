@@ -39,15 +39,15 @@ const fetchGasPost = async (action: string, payload: any = {}) => {
 
 export const BookingService = {
   testConfig: async () => fetchGasPost('testConfig'),
-  // 日付指定の取得は一括取得に統合されたため、将来的に削除可能ですが、互換性のため残す場合はgetMonthStatusと同じデータをフィルタして返すようにします
   getAvailability: async (date: string, type: ReservationType): Promise<AvailabilitySlot[]> => {
     const year = parseInt(date.split('-')[0]);
     const month = parseInt(date.split('-')[1]);
     const monthData = await fetchGasPost('getMonthStatus', { year, month, type });
     return monthData[date] || [];
   },
-  // 戻り値をRecord<string, AvailabilitySlot[]>に変更
-  getMonthStatus: async (year: number, month: number, type: ReservationType): Promise<Record<string, AvailabilitySlot[]>> => fetchGasPost('getMonthStatus', { year, month, type }),
+  getMonthStatus: async (year: number, month: number, type: ReservationType, force: boolean = false): Promise<Record<string, AvailabilitySlot[]>> => 
+    fetchGasPost('getMonthStatus', { year, month, type, force }),
+    
   createBooking: async (bookingData: any): Promise<{ booking: Booking, checkoutUrl?: string }> => {
     const data = await fetchGasPost('createBooking', bookingData);
     return { 
