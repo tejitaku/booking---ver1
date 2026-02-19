@@ -10,8 +10,25 @@ function manualAuthorize() {
   const name = cal.getName();
   const ss = getSheet();
   const email = Session.getActiveUser().getEmail();
-  GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized.");
+  
+  // 外部通信権限を強制的に承認させるためのダミー呼び出し
+  try { UrlFetchApp.fetch("https://google.com"); } catch(e) {}
+  
+  GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized for Calendar, Sheets, Gmail, and External Requests.");
   return "Authorization successful for: " + name;
+}
+
+function logToSheet(action, message) {
+  try {
+    const ssId = getProp('SPREADSHEET_ID');
+    const ss = SpreadsheetApp.openById(ssId);
+    let sheet = ss.getSheetByName('Logs');
+    if (!sheet) {
+      sheet = ss.insertSheet('Logs');
+      sheet.appendRow(['Timestamp', 'Action', 'Message']);
+    }
+    sheet.appendRow([new Date(), action, message]);
+  } catch(e) {}
 }
 
 const getProp = (key) => {
@@ -57,6 +74,7 @@ function handleRequest(e) {
     else throw new Error('INVALID_ACTION: ' + action);
   } catch (err) {
     result = { error: err.message, stack: err.stack };
+    logToSheet("ERROR", err.message);
   }
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -149,8 +167,9 @@ function getMonthStatus(year, month, type, force) {
 
 function createBooking(payload) {
   const stripeKey = getProp('STRIPE_SECRET_KEY');
-  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is missing in Script Properties.");
+  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is missing.");
   
+  logToSheet("CREATE_BOOKING", "Creating Stripe session for " + payload.representative.email);
   const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey, payload.date, payload.time);
   const pendingSheet = getPendingSheet();
   pendingSheet.appendRow([session.id, JSON.stringify(payload), new Date().toISOString()]);
@@ -179,33 +198,36 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
 }
 
 function finalizeBooking(sessionId) {
+  logToSheet("FINALIZE_START", "Session ID: " + sessionId);
   if (!sessionId) throw new Error("Session ID is required.");
   
   const stripeKey = getProp('STRIPE_SECRET_KEY');
-  if (!stripeKey) throw new Error("Stripe Key not found.");
-
-  const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + sessionId, {
-    headers: { 'Authorization': 'Bearer ' + stripeKey }
-  });
-  const session = JSON.parse(response.getContentText());
   
+  let session;
+  try {
+    const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + sessionId, {
+      headers: { 'Authorization': 'Bearer ' + stripeKey },
+      muteHttpExceptions: true
+    });
+    session = JSON.parse(response.getContentText());
+    if (response.getResponseCode() !== 200) throw new Error("Stripe API Error: " + response.getContentText());
+  } catch(e) {
+    logToSheet("STRIPE_FETCH_ERROR", e.message);
+    throw e;
+  }
+
+  logToSheet("STRIPE_STATUS", "Payment status: " + session.payment_status);
   if (session.payment_status !== 'paid') {
     return { success: false, error: 'PAYMENT_NOT_COMPLETED' };
   }
   
   const sheet = getSheet();
   const bookingsData = sheet.getDataRange().getValues();
-  
-  // セッションIDの重複チェック
   for (let i = 1; i < bookingsData.length; i++) {
     const jsonStr = bookingsData[i][12];
-    if (jsonStr) {
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed.stripeSessionId === sessionId) {
-          return { success: true, alreadyFinalized: true };
-        }
-      } catch(e) {}
+    if (jsonStr && jsonStr.indexOf(sessionId) !== -1) {
+      logToSheet("FINALIZE_SKIP", "Already finalized.");
+      return { success: true, alreadyFinalized: true };
     }
   }
 
@@ -222,67 +244,42 @@ function finalizeBooking(sessionId) {
     }
   }
 
-  if (!bookingPayload) throw new Error("Reservation data for this session was not found. Please contact support.");
+  if (!bookingPayload) {
+    logToSheet("FINALIZE_ERROR", "Pending data not found for ID: " + sessionId);
+    throw new Error("Reservation data not found.");
+  }
 
   const id = 'bk_' + new Date().getTime();
   const createdAtISO = new Date().toISOString();
   bookingPayload.stripeSessionId = sessionId;
   bookingPayload.createdAt = createdAtISO;
 
-  // 1. まずスプレッドシートに書き込む (一番重要)
+  logToSheet("FINALIZE_WRITE", "Writing to Bookings sheet...");
   sheet.appendRow([
-    id, 
-    bookingPayload.type, 
-    bookingPayload.date, 
-    bookingPayload.time, 
-    'REQUESTED', 
-    bookingPayload.adults, 
-    bookingPayload.adultsNonAlc, 
-    bookingPayload.children, 
-    bookingPayload.infants, 
-    bookingPayload.totalPrice, 
-    bookingPayload.representative.lastName, 
-    bookingPayload.representative.email, 
-    JSON.stringify(bookingPayload), 
-    createdAtISO
+    id, bookingPayload.type, bookingPayload.date, bookingPayload.time, 'REQUESTED', 
+    bookingPayload.adults, bookingPayload.adultsNonAlc, bookingPayload.children, bookingPayload.infants, 
+    bookingPayload.totalPrice, bookingPayload.representative.lastName, bookingPayload.representative.email, 
+    JSON.stringify(bookingPayload), createdAtISO
   ]);
+  
+  // スプレッドシートの変更を即座に確定
+  SpreadsheetApp.flush();
 
-  // 2. メール送信 (失敗しても登録は維持されるようtry-catch)
-  try {
-    sendTemplatedEmail('RECEIVED', bookingPayload);
-  } catch (emailErr) {
-    console.error("Confirmation Email Error: " + emailErr);
-  }
+  logToSheet("FINALIZE_EMAIL", "Sending emails...");
+  try { sendTemplatedEmail('RECEIVED', bookingPayload); } catch (e) { logToSheet("EMAIL_ERROR_CUST", e.message); }
 
   try {
     const templates = getEmailTemplate();
     const adminEmail = templates['ADMIN_NOTIFY_EMAIL'];
     if (adminEmail) {
-      GmailApp.sendEmail(adminEmail, "[Sangen] New Booking Request Received (Paid)", 
-        "A new booking has been finalized after successful payment.\n\n" +
-        "Name: " + bookingPayload.representative.lastName + " " + bookingPayload.representative.firstName + "\n" +
-        "Date: " + bookingPayload.date + " " + bookingPayload.time + "\n" +
-        "Type: " + bookingPayload.type + "\n" +
-        "Total Price: ¥" + bookingPayload.totalPrice.toLocaleString()
-      );
+      GmailApp.sendEmail(adminEmail, "[Sangen] New Booking Request", "A new booking has been finalized.\nCustomer: " + bookingPayload.representative.lastName);
     }
-  } catch (adminEmailErr) {
-    console.error("Admin Email Error: " + adminEmailErr);
-  }
+  } catch (e) { logToSheet("EMAIL_ERROR_ADMIN", e.message); }
 
-  // 3. 最後に仮予約データを削除
-  try {
-    pendingSheet.deleteRow(rowIndex);
-  } catch(e) {}
+  logToSheet("FINALIZE_CLEANUP", "Deleting pending row: " + rowIndex);
+  try { pendingSheet.deleteRow(rowIndex); } catch(e) {}
 
-  // キャッシュクリア
-  try {
-    const cache = CacheService.getScriptCache();
-    const [y, m] = bookingPayload.date.split('-');
-    cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bookingPayload.type);
-    cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_ANY");
-  } catch(e) {}
-
+  logToSheet("FINALIZE_SUCCESS", "All steps completed for ID: " + id);
   return { success: true, id: id };
 }
 
@@ -336,23 +333,16 @@ function sendTemplatedEmail(type, booking) {
   let sub = templates[type + '_SUBJECT'];
   let bodyRaw = templates[type + '_BODY'];
   
-  // デフォルトテンプレート (管理画面で設定されていない場合のフォールバック)
   if (!sub || !bodyRaw) {
     if (type === 'RECEIVED') {
       sub = "Reservation Request Received - {{name}}";
-      bodyRaw = "Dear {{name}},\n\nWe have received your reservation request for {{date}} at {{time}}.\nOur staff will contact you shortly to confirm your booking.\n\nThank you,\nSangen Sake Experience";
-    } else {
-      return; // 他のステータスはデフォルトなし
-    }
+      bodyRaw = "Dear {{name}},\n\nWe have received your reservation request for {{date}} at {{time}}.\n\nThank you,\nSangen Sake Experience";
+    } else return;
   }
 
   const name = booking.representative.lastName + ' ' + booking.representative.firstName;
   const subject = sub.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time);
-  const message = bodyRaw
-    .replace(/{{name}}/g, name)
-    .replace(/{{date}}/g, booking.date)
-    .replace(/{{time}}/g, booking.time)
-    .replace(/{{type}}/g, booking.type);
+  const message = bodyRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time).replace(/{{type}}/g, booking.type);
 
   GmailApp.sendEmail(booking.representative.email, subject, message, { name: "Sangen Sake Experience" });
 }
