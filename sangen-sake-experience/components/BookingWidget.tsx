@@ -1,9 +1,10 @@
 
-import { useState, useEffect } from 'react';
+// Add React to the imports to resolve namespace errors in FC and Dispatch types
+import React, { useState, useEffect, useMemo } from 'react';
 import { ReservationType, AvailabilitySlot } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculatePriceBreakdown } from '../utils/pricing';
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw, Calendar as CalendarIcon } from 'lucide-react';
 
 interface BookingWidgetProps {
   reservationType: ReservationType;
@@ -11,6 +12,9 @@ interface BookingWidgetProps {
 }
 
 const MAX_CAPACITY = 6;
+
+// キャッシュをコンポーネントの外で保持（タブを開いている間有効）
+const monthStatusCache: Record<string, Record<string, boolean>> = {};
 
 const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProceed }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -20,9 +24,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
   
-  // Cache for month availability: { "2023-10-01": true (available) }
+  // 年月選択モードの状態
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+
   const [monthStatus, setMonthStatus] = useState<Record<string, boolean>>({});
-  const [loadingMonth, setLoadingMonth] = useState(true); // 初期値をtrueに
+  const [loadingMonth, setLoadingMonth] = useState(false);
 
   // Guest Counts
   const [adults, setAdults] = useState(0);
@@ -40,6 +46,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     ? Math.max(0, MAX_CAPACITY - (currentSlot.currentGroupCount || 0))
     : MAX_CAPACITY;
 
+  // 予約枠の取得
   useEffect(() => {
     if (selectedDate) {
       setLoadingSlots(true);
@@ -58,14 +65,24 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     }
   }, [selectedDate, reservationType]);
 
+  // 月間ステータスの取得（キャッシュ対応）
   useEffect(() => {
-    setLoadingMonth(true);
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth() + 1;
-    
+    const cacheKey = `${reservationType}_${year}_${month}`;
+
+    if (monthStatusCache[cacheKey]) {
+      setMonthStatus(monthStatusCache[cacheKey]);
+      setLoadingMonth(false);
+      return;
+    }
+
+    setLoadingMonth(true);
     BookingService.getMonthStatus(year, month, reservationType)
       .then(statusMap => {
-        setMonthStatus(statusMap || {});
+        const result = statusMap || {};
+        monthStatusCache[cacheKey] = result;
+        setMonthStatus(result);
       })
       .catch(e => {
         console.error("Failed to fetch month status", e);
@@ -90,6 +107,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
   };
 
+  const handleMonthYearSelect = (year: number, monthIndex: number) => {
+    setViewDate(new Date(year, monthIndex, 1));
+    setShowMonthPicker(false);
+  };
+
   const handleGuestChange = (setter: React.Dispatch<React.SetStateAction<number>>, currentVal: number, delta: number) => {
     const effectiveLimit = selectedTime ? remainingCapacity : MAX_CAPACITY;
 
@@ -100,6 +122,59 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     }
     setShowCapacityError(false);
     setter(Math.max(0, currentVal + delta));
+  };
+
+  const renderMonthPicker = () => {
+    const currentYear = today.getFullYear();
+    const years = [currentYear, currentYear + 1, currentYear + 2];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+
+    return (
+      <div className="absolute inset-0 z-20 bg-white p-4 animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-sm font-bold text-gray-700">Select Month & Year</h3>
+          <button 
+            onClick={() => setShowMonthPicker(false)}
+            className="text-xs text-gray-400 hover:text-stone-900 font-bold"
+          >
+            Close
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-6">
+          {years.map(year => (
+            <div key={year}>
+              <div className="text-xs font-bold text-stone-400 mb-2 border-b pb-1">{year}</div>
+              <div className="grid grid-cols-4 gap-2">
+                {months.map((m, idx) => {
+                  const isMonthPast = year === currentYear && idx < today.getMonth();
+                  const isCurrentView = viewDate.getFullYear() === year && viewDate.getMonth() === idx;
+                  
+                  return (
+                    <button
+                      key={m}
+                      disabled={isMonthPast}
+                      onClick={() => handleMonthYearSelect(year, idx)}
+                      className={`py-2 text-xs rounded transition-colors ${
+                        isCurrentView 
+                          ? 'bg-stone-900 text-white font-bold' 
+                          : isMonthPast 
+                          ? 'text-gray-200 cursor-not-allowed' 
+                          : 'hover:bg-stone-100 text-gray-600'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderCalendar = () => {
@@ -113,12 +188,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     const weeks = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     return (
-      <div className="bg-white rounded border border-gray-200 p-4 relative">
-        {loadingMonth && (
-           <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
-             <Loader2 className="animate-spin text-stone-400" size={24} />
-           </div>
-        )}
+      <div className="bg-white rounded border border-gray-200 p-4 relative min-h-[300px]">
+        {showMonthPicker && renderMonthPicker()}
 
         <div className="flex justify-between items-center mb-4">
           <button 
@@ -128,13 +199,23 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           >
             <ChevronLeft size={20} />
           </button>
-          <span className="font-bold text-gray-800">
-            {viewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-          </span>
+          
+          <button 
+            onClick={() => setShowMonthPicker(!showMonthPicker)}
+            className="flex items-center space-x-2 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors group"
+          >
+            <span className="font-bold text-gray-800">
+              {viewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+            <CalendarIcon size={14} className="text-stone-400 group-hover:text-stone-600" />
+            {loadingMonth && <Loader2 className="animate-spin text-stone-400 ml-1" size={14} />}
+          </button>
+
           <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 rounded text-gray-600">
             <ChevronRight size={20} />
           </button>
         </div>
+        
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
             {weeks.map(w => (
                 <div key={w} className="text-xs font-bold text-gray-400 uppercase tracking-wide">{w}</div>
@@ -153,7 +234,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 const isSelected = selectedDate === dateStr;
                 
                 // Determine if unavailable:
-                // 過去ではなく、かつ読み込みが完了しており、かつmonthStatusに存在しない(undefined)場合は不可日
                 const isUnavailable = !isPast && !loadingMonth && monthStatus[dateStr] !== true;
 
                 let buttonClass = `h-9 w-9 rounded-full flex items-center justify-center text-sm transition-all duration-200 relative overflow-hidden `;
@@ -161,7 +241,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 if (isSelected) {
                     buttonClass += 'bg-stone-900 text-white font-bold shadow-md transform scale-105';
                 } else if (isPast) {
-                    buttonClass += 'text-gray-300 cursor-not-allowed';
+                    buttonClass += 'text-gray-200 cursor-not-allowed';
                 } else if (isUnavailable) {
                     buttonClass += 'text-gray-400 font-medium cursor-not-allowed';
                 } else {
@@ -177,7 +257,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                         title={isUnavailable ? "Fully Booked / Closed" : ""}
                     >
                         <span className="relative z-10">{d}</span>
-                        {isUnavailable && (
+                        {isUnavailable && !isPast && (
                             <svg className="absolute inset-0 w-full h-full pointer-events-none p-[1px]" viewBox="0 0 100 100">
                                 <line 
                                   x1="25" y1="25" 
