@@ -281,7 +281,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 <span>¥{priceDetails.subTotal.toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>System Fee (1.5%)</span>
+                <span>Booking Fee (1.5%)</span>
                 <span>¥{priceDetails.bookingFee.toLocaleString()}</span>
               </div>
             </div>
