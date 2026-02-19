@@ -1,6 +1,6 @@
 
 {
-  "name": "Sangen Sake Experience",
+  "name": "SANGEN Sake Tasting Room",
   "description": "Reservation system for Sake Tasting (Private & Group) with Stripe integration logic and Admin dashboard.",
   "requestFramePermissions": [],
   "googlePermissions": [
