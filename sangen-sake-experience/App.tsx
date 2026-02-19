@@ -83,8 +83,8 @@ const App: React.FC = () => {
 
   if (route === 'success') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white max-w-2xl w-full p-10 rounded-lg shadow-xl text-center">
+      <div className="min-h-screen bg-transparent flex items-center justify-center p-4 text-center">
+        <div className="bg-white max-w-2xl w-full p-10 rounded-lg shadow-xl border border-gray-100">
           {isFinalizing ? (
             <div className="py-10 animate-pulse">
               <Loader2 size={48} className="mx-auto mb-6 text-stone-600 animate-spin" />
@@ -120,7 +120,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen ${isEmbedMode ? 'bg-transparent' : 'bg-stone-100'} py-10 px-4`}>
+    <div className="min-h-screen bg-transparent pt-2 pb-2 px-4">
        <div className="max-w-4xl mx-auto">
          {route === 'form' ? (
             <BookingForm initialData={bookingData} onBack={() => setRoute('widget')} onSubmit={handleFormSubmit} />
