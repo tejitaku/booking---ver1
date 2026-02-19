@@ -148,7 +148,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await BookingService.updateEmailTemplate(key, value);
       await loadEmailTemplates();
     } catch (e) {
-      alert("テンプレートの保存に失敗しました: " + e);
+      alert("保存に失敗しました: " + e);
     } finally {
       setIsSavingTemplate(false);
       setIsProcessing(false); 
@@ -327,6 +327,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           </>
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
+            {/* Admin Notification Setting */}
+            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+              <h2 className="text-xl font-bold flex items-center text-stone-800 mb-6">
+                <Settings className="mr-2 text-stone-700" size={20} />
+                管理者通知設定
+              </h2>
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">通知先メールアドレス</label>
+                <div className="flex space-x-2">
+                  <input 
+                    type="email" 
+                    placeholder="example@admin.com"
+                    className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none bg-gray-50 font-medium"
+                    value={emailTemplates['ADMIN_NOTIFY_EMAIL'] || ''}
+                    onChange={(e) => setEmailTemplates({...emailTemplates, 'ADMIN_NOTIFY_EMAIL': e.target.value})}
+                  />
+                  <button 
+                    onClick={() => handleSaveTemplate('ADMIN_NOTIFY_EMAIL', emailTemplates['ADMIN_NOTIFY_EMAIL'])}
+                    disabled={isProcessing}
+                    className="bg-stone-800 text-white px-6 py-3 rounded-lg hover:bg-stone-900 transition disabled:opacity-50 font-bold text-sm"
+                  >
+                    保存
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">予約リクエストが入った際、このアドレスに通知メールが届きます。空欄の場合は送信されません。</p>
+              </div>
+            </div>
+
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold flex items-center text-stone-800">
@@ -457,6 +485,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   <div className="col-span-2">
                     <p className="text-[10px] text-gray-400 mb-0.5">電話番号</p>
                     <p className="font-medium text-stone-900">{selectedBooking.representative.phone}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[10px] text-gray-400 mb-0.5">食事制限 (Dietary Restrictions)</p>
+                    <p className="font-medium text-stone-900">{selectedBooking.representative.dietaryRestrictions || 'なし'}</p>
                   </div>
                 </div>
               </div>
