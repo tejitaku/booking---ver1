@@ -367,14 +367,15 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
         <div className="space-y-3 border-t pt-4">
           <label className="block text-sm font-semibold text-gray-700">Guests</label>
           {[
-            { label: 'Adults (20+)', val: adults, set: setAdults },
-            { label: 'Alcohol-Free (13+)', val: adultsNonAlc, set: setAdultsNonAlc },
-            { label: 'Children (5-12)', val: children, set: setChildren },
-            { label: 'Infants (0-4)', val: infants, set: setInfants },
+            { label: 'Adult', age: '[Age 20+]', val: adults, set: setAdults },
+            { label: 'Adult (Alcohol-Free Tastings)', age: '[Age 13+]', val: adultsNonAlc, set: setAdultsNonAlc },
+            { label: 'Child', age: '[Age 5-12]', val: children, set: setChildren },
+            { label: 'Child', age: '[Age 0-4]', val: infants, set: setInfants },
           ].map((g, i) => (
             <div key={i} className="flex justify-between items-center">
               <div>
-                <div className="text-sm font-medium">{g.label}</div>
+                <div className="text-sm font-medium text-stone-900">{g.label}</div>
+                <div className="text-[10px] text-gray-400 font-normal">{g.age}</div>
               </div>
               <div className="flex items-center space-x-3 bg-gray-50 p-1 rounded-full border border-gray-100">
                 <button 
