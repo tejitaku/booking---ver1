@@ -150,8 +150,8 @@ const App: React.FC = () => {
                 <p>Our staff will review your request and contact you within 3 days to finalize the booking.</p>
                 <p>If you don't hear from us, please email <a href="mailto:info@sangen-sake.jp" className="text-stone-900 font-bold underline">info@sangen-sake.jp</a>.</p>
               </div>
-              <button onClick={() => window.location.href = '/'} className="mt-10 px-8 py-3 bg-stone-900 text-white rounded hover:bg-stone-800 transition font-bold">
-                Back to Top
+              <button onClick={() => window.close()} className="mt-10 px-8 py-3 bg-stone-900 text-white rounded hover:bg-stone-800 transition font-bold">
+                Close
               </button>
             </>
           )}
