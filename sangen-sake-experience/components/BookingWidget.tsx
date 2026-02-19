@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ReservationType, AvailabilitySlot } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculatePriceBreakdown } from '../utils/pricing';
@@ -200,7 +200,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const canRequest = selectedDate && selectedTime && totalPeople > 0 && totalPeople <= (selectedTime ? remainingCapacity : MAX_CAPACITY);
 
   return (
-    <div className="max-w-md mx-auto bg-white shadow-xl rounded-lg overflow-hidden border border-gray-100">
+    <div className="max-w-2xl mx-auto bg-white rounded-lg overflow-hidden border border-gray-100">
       <div className="p-6 space-y-6">
         <div><label className="block text-sm font-semibold text-gray-700 mb-2">Select Date</label>{renderCalendar()}</div>
         
