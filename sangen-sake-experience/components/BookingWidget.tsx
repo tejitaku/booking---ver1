@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ReservationType, AvailabilitySlot } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculatePriceBreakdown } from '../utils/pricing';
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw, Calendar as CalendarIcon, Info } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw, Calendar as CalendarIcon } from 'lucide-react';
 
 interface BookingWidgetProps {
   reservationType: ReservationType;
@@ -114,9 +114,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     setter(Math.max(0, currentVal + delta));
   };
 
-  // カレンダー内のデータが空かどうか
-  const isMonthEmpty = useMemo(() => Object.keys(currentMonthData).length === 0 && !loadingMonth && !fetchError, [currentMonthData, loadingMonth, fetchError]);
-
   const renderCalendar = () => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -156,7 +153,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center space-x-1">
             <button onClick={handlePrevMonth} disabled={isPrevDisabled} className={`p-1 rounded text-gray-600 ${isPrevDisabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'}`}><ChevronLeft size={20} /></button>
-            <button onClick={() => refreshData(true)} title="Force Refresh Calendar" className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-full transition-colors"><RefreshCw size={14} className={loadingMonth ? 'animate-spin' : ''} /></button>
+            <button onClick={() => refreshData(true)} title="Refresh Schedule" className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-full transition-colors"><RefreshCw size={14} className={loadingMonth ? 'animate-spin' : ''} /></button>
           </div>
           <button onClick={() => setShowMonthPicker(true)} className="flex items-center space-x-2 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors group">
             <span className="font-bold text-gray-800">{viewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
@@ -164,19 +161,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           </button>
           <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 rounded text-gray-600"><ChevronRight size={20} /></button>
         </div>
-
-        {isMonthEmpty && (
-          <div className="absolute inset-x-4 top-24 z-10 p-4 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs flex flex-col items-start space-y-2 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-start space-x-2">
-              <Info size={16} className="mt-0.5 flex-shrink-0" />
-              <p>この月の予約枠がGoogleカレンダーに登録されていないか、取得できていません。</p>
-            </div>
-            <button onClick={() => refreshData(true)} className="flex items-center space-x-1 px-3 py-1 bg-white border border-amber-300 rounded hover:bg-amber-100 font-bold transition-colors">
-              <RefreshCw size={12} className={loadingMonth ? 'animate-spin' : ''} />
-              <span>最新の情報を取得する</span>
-            </button>
-          </div>
-        )}
 
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
             {weeks.map(w => (<div key={w} className="text-xs font-bold text-gray-400 uppercase tracking-wide">{w}</div>))}
