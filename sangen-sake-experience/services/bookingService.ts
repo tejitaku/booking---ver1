@@ -55,6 +55,11 @@ export const BookingService = {
       checkoutUrl: data.checkoutUrl 
     };
   },
+  // Stripe決済完了後の確定処理
+  // Fix: Added error?: string to the return type to resolve "Property 'error' does not exist" error in App.tsx
+  finalizeBooking: async (sessionId: string): Promise<{ success: boolean, id?: string, alreadyFinalized?: boolean, error?: string }> => {
+    return fetchGasPost('finalizeBooking', { sessionId });
+  },
   getBookings: async (): Promise<Booking[]> => fetchGasPost('getBookings'),
   updateBookingStatus: async (id: string, status: BookingStatus, notes?: string, refundAmount?: number): Promise<void> => {
     await fetchGasPost('updateStatus', { id, status, notes, refundAmount });
