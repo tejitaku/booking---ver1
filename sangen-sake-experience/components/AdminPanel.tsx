@@ -285,7 +285,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                         <div className="text-[10px] text-gray-400 font-mono">{b.id}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full ${b.type === 'PRIVATE' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <span className={`px-2 py-0.5 inline-flex text-[10px] font-bold rounded-full ${b.type === 'PRIVATE' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
                           {b.type}
                         </span>
                         <div className="text-gray-500 mt-1">{b.adults + b.adultsNonAlc + b.children + b.infants}名</div>
