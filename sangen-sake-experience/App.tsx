@@ -72,11 +72,6 @@ const App: React.FC = () => {
          ) : (
             <>
               <BookingWidget reservationType={widgetType} onProceed={(data) => { setBookingData(data); setRoute('form'); }} />
-              {!isEmbedMode && (
-                <div className="mt-12 text-center">
-                  <button onClick={() => setRoute('admin')} className="text-sm text-gray-400 hover:text-stone-600 underline">Management Login</button>
-                </div>
-              )}
             </>
          )}
        </div>
