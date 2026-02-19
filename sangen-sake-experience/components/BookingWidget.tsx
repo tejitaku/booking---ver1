@@ -39,11 +39,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const currentSlot = useMemo(() => slots.find(s => s.time === selectedTime), [slots, selectedTime]);
   const remainingCapacity = useMemo(() => (reservationType === ReservationType.GROUP && currentSlot) ? Math.max(0, MAX_CAPACITY - (currentSlot.currentGroupCount || 0)) : MAX_CAPACITY, [reservationType, currentSlot]);
 
-  const fetchMonthData = useCallback(async (year: number, month: number) => {
+  const fetchMonthData = useCallback(async (year: number, month: number, force: boolean = false) => {
     const cacheKey = `${reservationType}_${year}_${month}`;
-    if (monthDataCache[cacheKey]) return monthDataCache[cacheKey];
+    if (!force && monthDataCache[cacheKey]) return monthDataCache[cacheKey];
     try {
-      const data = await BookingService.getMonthStatus(year, month, reservationType);
+      const data = await BookingService.getMonthStatus(year, month, reservationType, force);
       const result = data || {};
       monthDataCache[cacheKey] = result;
       return result;
@@ -58,13 +58,13 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     try { await fetchMonthData(nextDate.getFullYear(), nextDate.getMonth() + 1); } catch (e) {}
   }, [fetchMonthData]);
 
-  useEffect(() => {
+  const refreshData = useCallback((force: boolean = false) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth() + 1;
     const cacheKey = `${reservationType}_${year}_${month}`;
 
     setFetchError(null);
-    if (monthDataCache[cacheKey]) {
+    if (!force && monthDataCache[cacheKey]) {
       setCurrentMonthData(monthDataCache[cacheKey]);
       setLoadingMonth(false);
       prefetchNextMonth(viewDate);
@@ -72,7 +72,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     }
 
     setLoadingMonth(true);
-    fetchMonthData(year, month).then(data => {
+    fetchMonthData(year, month, force).then(data => {
       setCurrentMonthData(data);
       setLoadingMonth(false);
       prefetchNextMonth(viewDate);
@@ -81,6 +81,10 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
       setLoadingMonth(false);
     });
   }, [viewDate, reservationType, fetchMonthData, prefetchNextMonth]);
+
+  useEffect(() => {
+    refreshData(false);
+  }, [refreshData]);
 
   // 今日の日付（比較用）
   const today = useMemo(() => {
@@ -150,19 +154,27 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
         )}
 
         <div className="flex justify-between items-center mb-4">
-          <button onClick={handlePrevMonth} disabled={isPrevDisabled} className={`p-1 rounded text-gray-600 ${isPrevDisabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'}`}><ChevronLeft size={20} /></button>
+          <div className="flex items-center space-x-1">
+            <button onClick={handlePrevMonth} disabled={isPrevDisabled} className={`p-1 rounded text-gray-600 ${isPrevDisabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'}`}><ChevronLeft size={20} /></button>
+            <button onClick={() => refreshData(true)} title="Force Refresh Calendar" className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-full transition-colors"><RefreshCw size={14} className={loadingMonth ? 'animate-spin' : ''} /></button>
+          </div>
           <button onClick={() => setShowMonthPicker(true)} className="flex items-center space-x-2 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors group">
             <span className="font-bold text-gray-800">{viewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
             <CalendarIcon size={14} className="text-stone-400 group-hover:text-stone-600" />
-            {loadingMonth && <Loader2 className="animate-spin text-stone-400 ml-1" size={14} />}
           </button>
           <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 rounded text-gray-600"><ChevronRight size={20} /></button>
         </div>
 
         {isMonthEmpty && (
-          <div className="absolute inset-x-4 top-24 z-10 p-4 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs flex items-start space-x-2 animate-in fade-in slide-in-from-top-2">
-            <Info size={16} className="mt-0.5 flex-shrink-0" />
-            <p>この月の予約枠がGoogleカレンダーに登録されていません。管理画面またはGoogleカレンダーを確認してください。</p>
+          <div className="absolute inset-x-4 top-24 z-10 p-4 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs flex flex-col items-start space-y-2 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start space-x-2">
+              <Info size={16} className="mt-0.5 flex-shrink-0" />
+              <p>この月の予約枠がGoogleカレンダーに登録されていないか、取得できていません。</p>
+            </div>
+            <button onClick={() => refreshData(true)} className="flex items-center space-x-1 px-3 py-1 bg-white border border-amber-300 rounded hover:bg-amber-100 font-bold transition-colors">
+              <RefreshCw size={12} className={loadingMonth ? 'animate-spin' : ''} />
+              <span>最新の情報を取得する</span>
+            </button>
           </div>
         )}
 
@@ -213,7 +225,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           {fetchError ? (
             <div className="p-4 bg-red-50 text-red-600 text-xs rounded border border-red-200 flex flex-col items-center text-center">
               <AlertCircle size={20} className="mb-2" /><p>Error: {fetchError}</p>
-              <button onClick={() => setViewDate(new Date(viewDate))} className="mt-2 flex items-center text-[10px] font-bold uppercase tracking-wide bg-white px-3 py-1 rounded border border-red-300 hover:bg-red-50"><RefreshCw size={10} className="mr-1" /> Retry</button>
+              <button onClick={() => refreshData(true)} className="mt-2 flex items-center text-[10px] font-bold uppercase tracking-wide bg-white px-3 py-1 rounded border border-red-300 hover:bg-red-50"><RefreshCw size={10} className="mr-1" /> Retry</button>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2">
