@@ -143,7 +143,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
   const handleSaveTemplate = async (key: string, value: string) => {
     setIsSavingTemplate(true);
-    setIsProcessing(true); // グローバルの処理中オーバーレイを表示
+    setIsProcessing(true); 
     try {
       await BookingService.updateEmailTemplate(key, value);
       await loadEmailTemplates();
@@ -151,7 +151,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       alert("テンプレートの保存に失敗しました: " + e);
     } finally {
       setIsSavingTemplate(false);
-      setIsProcessing(false); // オーバーレイを非表示
+      setIsProcessing(false); 
     }
   };
 
@@ -240,6 +240,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <input 
                   type="text" placeholder="名前、IDで検索..." 
                   className="pl-10 pr-4 py-2 w-full border rounded-lg focus:ring-2 focus:ring-stone-400 focus:outline-none"
+                  /* Fix: Passing an event handler to onChange to capture the input value instead of passing the setter directly */
                   value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 />
               </div>
@@ -395,10 +396,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start">
                <Settings size={18} className="text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
                <div className="text-xs text-blue-800 space-y-1">
-                 <p className="font-bold underline">メール設定のヒント：</p>
-                 <p>1. 各タブ（受付時、承認時など）ごとに「件名」と「本文」の両方を保存してください。</p>
-                 <p>2. 変数 {"{{name}}"} 等は、送信時に自動的に顧客の名前や日時に置き換わります。</p>
-                 <p>3. 変更を保存した後は、実際にテスト予約を行ってメールを確認することをお勧めします。</p>
+                 <p className="font-bold underline">Email Setting Tips:</p>
+                 <p>1. Save both the "Subject" and "Body" for each tab (Received, Confirmed, etc.).</p>
+                 <p>2. Variables like {"{{name}}"} will be automatically replaced with the customer's info.</p>
+                 <p>3. We recommend making a test booking to verify the emails after saving changes.</p>
                </div>
             </div>
           </div>
