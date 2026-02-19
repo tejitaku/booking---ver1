@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ReservationType, AvailabilitySlot } from '../types';
 import { BookingService } from '../services/bookingService';
 import { calculatePriceBreakdown } from '../utils/pricing';
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Plus, Minus, RefreshCw, Calendar as CalendarIcon, Info } from 'lucide-react';
 
 interface BookingWidgetProps {
   reservationType: ReservationType;
@@ -12,7 +12,7 @@ interface BookingWidgetProps {
 
 const MAX_CAPACITY = 6;
 
-// メモリキャッシュ: Record<cacheKey, Record<dateStr, slots[]>>
+// メモリキャッシュ
 const monthDataCache: Record<string, Record<string, AvailabilitySlot[]>> = {};
 
 const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProceed }) => {
@@ -35,52 +35,35 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const totalPeople = adults + adultsNonAlc + children + infants;
   const priceDetails = calculatePriceBreakdown(reservationType, adults, adultsNonAlc, children, infants);
 
-  // 選択された日付のスロットをメモリから即座に抽出
-  const slots = useMemo(() => {
-    return currentMonthData[selectedDate] || [];
-  }, [currentMonthData, selectedDate]);
+  const slots = useMemo(() => currentMonthData[selectedDate] || [], [currentMonthData, selectedDate]);
+  const currentSlot = useMemo(() => slots.find(s => s.time === selectedTime), [slots, selectedTime]);
+  const remainingCapacity = useMemo(() => (reservationType === ReservationType.GROUP && currentSlot) ? Math.max(0, MAX_CAPACITY - (currentSlot.currentGroupCount || 0)) : MAX_CAPACITY, [reservationType, currentSlot]);
 
-  const currentSlot = useMemo(() => {
-    return slots.find(s => s.time === selectedTime);
-  }, [slots, selectedTime]);
-
-  const remainingCapacity = useMemo(() => {
-    return (reservationType === ReservationType.GROUP && currentSlot)
-      ? Math.max(0, MAX_CAPACITY - (currentSlot.currentGroupCount || 0))
-      : MAX_CAPACITY;
-  }, [reservationType, currentSlot]);
-
-  // 特定月のデータを取得する関数
   const fetchMonthData = useCallback(async (year: number, month: number) => {
     const cacheKey = `${reservationType}_${year}_${month}`;
     if (monthDataCache[cacheKey]) return monthDataCache[cacheKey];
-
     try {
       const data = await BookingService.getMonthStatus(year, month, reservationType);
       const result = data || {};
       monthDataCache[cacheKey] = result;
       return result;
     } catch (e: any) {
-      console.error(`Failed to fetch status for ${year}-${month}`, e);
-      setFetchError(e.message || 'Connection Error');
-      return {};
+      console.error(`Fetch Error:`, e);
+      throw e;
     }
   }, [reservationType]);
 
-  // プリフェッチ（翌月の先読み）
   const prefetchNextMonth = useCallback(async (currentViewDate: Date) => {
     const nextDate = new Date(currentViewDate.getFullYear(), currentViewDate.getMonth() + 1, 1);
-    await fetchMonthData(nextDate.getFullYear(), nextDate.getMonth() + 1);
+    try { await fetchMonthData(nextDate.getFullYear(), nextDate.getMonth() + 1); } catch (e) {}
   }, [fetchMonthData]);
 
-  // メインのデータ更新処理
   useEffect(() => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth() + 1;
     const cacheKey = `${reservationType}_${year}_${month}`;
 
     setFetchError(null);
-
     if (monthDataCache[cacheKey]) {
       setCurrentMonthData(monthDataCache[cacheKey]);
       setLoadingMonth(false);
@@ -93,24 +76,23 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
       setCurrentMonthData(data);
       setLoadingMonth(false);
       prefetchNextMonth(viewDate);
+    }).catch(err => {
+      setFetchError(err.message || "Failed to load schedule");
+      setLoadingMonth(false);
     });
   }, [viewDate, reservationType, fetchMonthData, prefetchNextMonth]);
 
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  // 今日の日付（比較用）
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return d;
+  }, []);
 
-  const isPrevDisabled = 
-    viewDate.getFullYear() < today.getFullYear() || 
-    (viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() <= today.getMonth());
+  const isPrevDisabled = viewDate.getFullYear() < today.getFullYear() || (viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() <= today.getMonth());
 
-  const handlePrevMonth = () => {
-    if (isPrevDisabled) return;
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
-  };
+  const handlePrevMonth = () => { if (!isPrevDisabled) setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)); };
+  const handleNextMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
 
   const handleMonthYearSelect = (year: number, monthIndex: number) => {
     setViewDate(new Date(year, monthIndex, 1));
@@ -128,45 +110,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     setter(Math.max(0, currentVal + delta));
   };
 
-  const renderMonthPicker = () => {
-    const currentYear = today.getFullYear();
-    const years = [currentYear, currentYear + 1, currentYear + 2];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-    return (
-      <div className="absolute inset-0 z-20 bg-white p-4 animate-in fade-in zoom-in-95 duration-200 flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-bold text-gray-700">Select Month & Year</h3>
-          <button onClick={() => setShowMonthPicker(false)} className="text-xs text-gray-400 hover:text-stone-900 font-bold">Close</button>
-        </div>
-        <div className="flex-1 overflow-y-auto space-y-6">
-          {years.map(year => (
-            <div key={year}>
-              <div className="text-xs font-bold text-stone-400 mb-2 border-b pb-1">{year}</div>
-              <div className="grid grid-cols-4 gap-2">
-                {months.map((m, idx) => {
-                  const isMonthPast = year === currentYear && idx < today.getMonth();
-                  const isCurrentView = viewDate.getFullYear() === year && viewDate.getMonth() === idx;
-                  return (
-                    <button
-                      key={m}
-                      disabled={isMonthPast}
-                      onClick={() => handleMonthYearSelect(year, idx)}
-                      className={`py-2 text-xs rounded transition-colors ${
-                        isCurrentView ? 'bg-stone-900 text-white font-bold' : isMonthPast ? 'text-gray-200 cursor-not-allowed' : 'hover:bg-stone-100 text-gray-600'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // カレンダー内のデータが空かどうか
+  const isMonthEmpty = useMemo(() => Object.keys(currentMonthData).length === 0 && !loadingMonth && !fetchError, [currentMonthData, loadingMonth, fetchError]);
 
   const renderCalendar = () => {
     const year = viewDate.getFullYear();
@@ -178,16 +123,49 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
 
     return (
       <div className="bg-white rounded border border-gray-200 p-4 relative min-h-[300px]">
-        {showMonthPicker && renderMonthPicker()}
+        {showMonthPicker && (
+          <div className="absolute inset-0 z-20 bg-white p-4 animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-gray-700">Select Month & Year</h3>
+              <button onClick={() => setShowMonthPicker(false)} className="text-xs text-gray-400 hover:text-stone-900 font-bold">Close</button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-6">
+              {[today.getFullYear(), today.getFullYear()+1].map(y => (
+                <div key={y}>
+                  <div className="text-xs font-bold text-stone-400 mb-2 border-b pb-1">{y}</div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, idx) => {
+                      const isPast = y === today.getFullYear() && idx < today.getMonth();
+                      return (
+                        <button key={m} disabled={isPast} onClick={() => handleMonthYearSelect(y, idx)} className={`py-2 text-xs rounded transition-colors ${viewDate.getFullYear() === y && viewDate.getMonth() === idx ? 'bg-stone-900 text-white font-bold' : isPast ? 'text-gray-200' : 'hover:bg-stone-100 text-gray-600'}`}>
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-4">
           <button onClick={handlePrevMonth} disabled={isPrevDisabled} className={`p-1 rounded text-gray-600 ${isPrevDisabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'}`}><ChevronLeft size={20} /></button>
-          <button onClick={() => setShowMonthPicker(!showMonthPicker)} className="flex items-center space-x-2 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors group">
+          <button onClick={() => setShowMonthPicker(true)} className="flex items-center space-x-2 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors group">
             <span className="font-bold text-gray-800">{viewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
             <CalendarIcon size={14} className="text-stone-400 group-hover:text-stone-600" />
             {loadingMonth && <Loader2 className="animate-spin text-stone-400 ml-1" size={14} />}
           </button>
           <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 rounded text-gray-600"><ChevronRight size={20} /></button>
         </div>
+
+        {isMonthEmpty && (
+          <div className="absolute inset-x-4 top-24 z-10 p-4 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs flex items-start space-x-2 animate-in fade-in slide-in-from-top-2">
+            <Info size={16} className="mt-0.5 flex-shrink-0" />
+            <p>この月の予約枠がGoogleカレンダーに登録されていません。管理画面またはGoogleカレンダーを確認してください。</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
             {weeks.map(w => (<div key={w} className="text-xs font-bold text-gray-400 uppercase tracking-wide">{w}</div>))}
         </div>
@@ -198,14 +176,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 const dateObj = new Date(year, month, d);
                 const isPast = dateObj < today;
-                const isSelected = selectedDate === dateStr;
-                
-                // データがある（枠が存在する）日のみ選択可能
                 const hasSlots = !!currentMonthData[dateStr] && currentMonthData[dateStr].length > 0;
                 const isUnavailable = !isPast && !loadingMonth && !hasSlots;
 
                 let buttonClass = `h-9 w-9 rounded-full flex items-center justify-center text-sm transition-all duration-200 relative overflow-hidden `;
-                if (isSelected) buttonClass += 'bg-stone-900 text-white font-bold shadow-md transform scale-105';
+                if (selectedDate === dateStr) buttonClass += 'bg-stone-900 text-white font-bold shadow-md transform scale-105';
                 else if (isPast) buttonClass += 'text-gray-200 cursor-not-allowed';
                 else if (isUnavailable) buttonClass += 'text-gray-400 font-medium cursor-not-allowed';
                 else buttonClass += 'hover:bg-stone-100 text-gray-700 hover:scale-105';
@@ -228,10 +203,6 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
 
   const canRequest = selectedDate && selectedTime && totalPeople > 0 && totalPeople <= (selectedTime ? remainingCapacity : MAX_CAPACITY);
 
-  const handleSubmit = () => {
-    onProceed({ type: reservationType, date: selectedDate, time: selectedTime, adults, adultsNonAlc, children, infants, totalPrice: priceDetails.total });
-  };
-
   return (
     <div className="max-w-md mx-auto bg-white shadow-xl rounded-lg overflow-hidden border border-gray-100">
       <div className="p-6 space-y-6">
@@ -240,9 +211,9 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Select Time</label>
           {fetchError ? (
-            <div className="p-4 bg-red-50 text-red-600 text-sm rounded border border-red-200 flex flex-col items-center text-center">
+            <div className="p-4 bg-red-50 text-red-600 text-xs rounded border border-red-200 flex flex-col items-center text-center">
               <AlertCircle size={20} className="mb-2" /><p>Error: {fetchError}</p>
-              <button onClick={() => setViewDate(new Date(viewDate))} className="mt-2 flex items-center text-xs font-bold uppercase tracking-wide bg-white px-3 py-1 rounded border border-red-300 hover:bg-red-50"><RefreshCw size={12} className="mr-1" /> Retry</button>
+              <button onClick={() => setViewDate(new Date(viewDate))} className="mt-2 flex items-center text-[10px] font-bold uppercase tracking-wide bg-white px-3 py-1 rounded border border-red-300 hover:bg-red-50"><RefreshCw size={10} className="mr-1" /> Retry</button>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2">
@@ -256,12 +227,8 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                   </button>
                 );
               })}
-              {slots.length === 0 && selectedDate && (
-                <div className="col-span-3 text-sm text-gray-500 text-center bg-gray-50 p-4 rounded">No slots available for this date.</div>
-              )}
-              {slots.length === 0 && !selectedDate && (
-                 <p className="col-span-3 text-sm text-gray-400 text-center py-4 bg-gray-50/50 rounded border border-dashed">Please select a date first.</p>
-              )}
+              {slots.length === 0 && selectedDate && <div className="col-span-3 text-sm text-gray-500 text-center bg-gray-50 p-4 rounded">No slots available.</div>}
+              {slots.length === 0 && !selectedDate && <p className="col-span-3 text-sm text-gray-400 text-center py-4 bg-gray-50/50 rounded border border-dashed">Please select a date first.</p>}
             </div>
           )}
         </div>
@@ -270,7 +237,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           <label className="block text-sm font-semibold text-gray-700">Guests</label>
           {[
             { label: 'Adult', age: '[Age 20+]', val: adults, set: setAdults },
-            { label: 'Adult (Alcohol-Free Tastings)', age: '[Age 13+]', val: adultsNonAlc, set: setAdultsNonAlc },
+            { label: 'Adult (Alcohol-Free)', age: '[Age 13+]', val: adultsNonAlc, set: setAdultsNonAlc },
             { label: 'Child', age: '[Age 5-12]', val: children, set: setChildren },
             { label: 'Child', age: '[Age 0-4]', val: infants, set: setInfants },
           ].map((g, i) => (
@@ -285,19 +252,10 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
           ))}
           {showCapacityError && <div className="flex items-center text-red-600 text-xs mt-2 bg-red-50 p-2 rounded animate-pulse"><AlertCircle size={14} className="mr-2 flex-shrink-0" /><span>{selectedTime ? `あと${remainingCapacity}名です` : `定員は${MAX_CAPACITY}人です`}</span></div>}
         </div>
+
         <div className="border-t pt-4 mt-6">
-          {totalPeople > 0 && (
-            <div className="mb-4 space-y-1 text-sm text-gray-600">
-               {adults > 0 && <div className="flex justify-between"><span>Adults × {adults}</span><span>¥{priceDetails.adultTotal.toLocaleString()}</span></div>}
-               {adultsNonAlc > 0 && <div className="flex justify-between"><span>Alcohol-Free × {adultsNonAlc}</span><span>¥{priceDetails.nonAlcTotal.toLocaleString()}</span></div>}
-               {children > 0 && <div className="flex justify-between"><span>Children × {children}</span><span>¥{priceDetails.childTotal.toLocaleString()}</span></div>}
-               <div className="border-t border-gray-100 my-2 pt-1"></div>
-               <div className="flex justify-between"><span>Subtotal</span><span>¥{priceDetails.subTotal.toLocaleString()}</span></div>
-               <div className="flex justify-between text-xs text-gray-400"><span>Booking Fee</span><span>¥{priceDetails.bookingFee.toLocaleString()}</span></div>
-            </div>
-          )}
           <div className="flex justify-between items-end mb-4"><span className="font-bold text-gray-700">Total (Inc. Tax)</span><span className="serif font-bold text-2xl text-stone-900">¥{priceDetails.total.toLocaleString()}</span></div>
-          <button onClick={handleSubmit} disabled={!canRequest} className={`w-full py-3 px-4 rounded font-semibold text-white transition-colors ${canRequest ? 'bg-stone-900 hover:bg-stone-800' : 'bg-gray-300 cursor-not-allowed'}`}>Request Reservation</button>
+          <button onClick={() => onProceed({ type: reservationType, date: selectedDate, time: selectedTime, adults, adultsNonAlc, children, infants, totalPrice: priceDetails.total })} disabled={!canRequest} className={`w-full py-3 px-4 rounded font-semibold text-white transition-colors ${canRequest ? 'bg-stone-900 hover:bg-stone-800' : 'bg-gray-300 cursor-not-allowed'}`}>Request Reservation</button>
         </div>
       </div>
     </div>
