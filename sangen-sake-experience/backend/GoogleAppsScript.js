@@ -5,15 +5,30 @@
  * ============================================================
  */
 
+/**
+ * 権限承認を確実に発生させるための関数
+ * GASエディタでこれを選択して実行してください。
+ */
 function manualAuthorize() {
+  // 1. カレンダー権限
+  const cal = getCalendar();
+  const name = cal.getName();
+  
+  // 2. スプレッドシート権限
+  const ss = getSheet();
+  const rows = ss.getLastRow();
+  
+  // 3. Gmail権限
   const email = Session.getActiveUser().getEmail();
-  const subject = "Sangen System: Authorization Check";
-  const body = "This is a dummy email to trigger the Google permission dialog.";
-  GmailApp.sendEmail(email, subject, body);
-  return "Authorization process triggered.";
+  GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized to access your calendar, spreadsheets, and email.");
+  
+  return "Authorization successful for: " + name + " (Calendar) and " + email + " (Gmail).";
 }
 
-const getProp = (key) => PropertiesService.getScriptProperties().getProperty(key);
+const getProp = (key) => {
+  const p = PropertiesService.getScriptProperties().getProperty(key);
+  return p ? p.trim() : null;
+};
 
 function doOptions(e) {
   return ContentService.createTextOutput().setMimeType(ContentService.MimeType.JSON).append(JSON.stringify({ status: 'ok' }));
@@ -41,7 +56,7 @@ function handleRequest(e) {
     }
 
     if (action === 'testConfig') result = testConfig();
-    else if (action === 'getMonthStatus') result = getMonthStatus(Number(payload.year), Number(payload.month), payload.type);
+    else if (action === 'getMonthStatus') result = getMonthStatus(Number(payload.year), Number(payload.month), payload.type, payload.force);
     else if (action === 'getBookings') result = getBookings();
     else if (action === 'createBooking') result = createBooking(payload);
     else if (action === 'updateStatus') result = updateBookingStatus(payload);
@@ -63,11 +78,14 @@ function testConfig() {
     const calId = getProp('CALENDAR_ID');
     const ss = SpreadsheetApp.openById(ssId);
     const cal = calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
+    
     return { 
       success: true, 
       message: "Backend is active.",
       calendarName: cal ? cal.getName() : "Not Found",
-      spreadsheetName: ss ? ss.getName() : "Not Found"
+      calendarIdUsed: cal ? cal.getId() : "Default",
+      spreadsheetName: ss ? ss.getName() : "Not Found",
+      timeZone: Session.getScriptTimeZone()
     };
   } catch (e) {
     return { success: false, error: e.message };
@@ -102,28 +120,29 @@ function getSettingsSheet() {
 function getCalendar() {
   const calId = getProp('CALENDAR_ID');
   const cal = calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
-  if (!cal) throw new Error("Calendar not found. Check CALENDAR_ID.");
+  if (!cal) throw new Error("Calendar not found. Check CALENDAR_ID in properties.");
   return cal;
 }
 
 /**
  * 月間ステータスと詳細スロットの一括取得
  */
-function getMonthStatus(year, month, type) {
-  const cacheKey = "month_data_v2_" + year + "_" + month + "_" + (type || "ANY");
+function getMonthStatus(year, month, type, force) {
+  const cacheKey = "month_data_v3_" + year + "_" + month + "_" + (type || "ANY");
   const cache = CacheService.getScriptCache();
   
-  try {
-    const cachedData = cache.get(cacheKey);
-    if (cachedData) return JSON.parse(cachedData);
-  } catch (e) { console.warn("Cache read failed"); }
+  if (!force) {
+    try {
+      const cachedData = cache.get(cacheKey);
+      if (cachedData) return JSON.parse(cachedData);
+    } catch (e) { console.warn("Cache read failed"); }
+  }
 
   const results = {};
   const calendar = getCalendar();
   const tz = Session.getScriptTimeZone();
   
-  // 指定した月の開始と終了（JSTを意識）
-  const startDate = new Date(year, month - 1, 1);
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0);
   const endDate = new Date(year, month, 0, 23, 59, 59);
   
   // 1. 予約状況の取得
@@ -138,7 +157,7 @@ function getMonthStatus(year, month, type) {
       const total = Number(rows[i][5]) + Number(rows[i][6]) + Number(rows[i][7]) + Number(rows[i][8]);
       bookingsMap[key] = (bookingsMap[key] || 0) + total;
     }
-  } catch (e) { console.error("Sheet read error: " + e.message); }
+  } catch (e) {}
 
   // 2. カレンダーからイベント取得
   const events = calendar.getEvents(startDate, endDate);
@@ -163,13 +182,13 @@ function getMonthStatus(year, month, type) {
     results[date].sort((a, b) => a.time.localeCompare(b.time));
   }
 
-  // キャッシュ保存（サイズ制限に配慮）
+  // 10分間キャッシュ
   try {
     const stringified = JSON.stringify(results);
     if (stringified.length < 100000) {
       cache.put(cacheKey, stringified, 600);
     }
-  } catch (e) { console.warn("Cache write failed"); }
+  } catch (e) {}
 
   return results;
 }
@@ -203,10 +222,11 @@ function createBooking(payload) {
   
   try { sendTemplatedEmail('RECEIVED', payload); } catch (e) {}
 
+  // キャッシュクリア
   const cache = CacheService.getScriptCache();
   const [y, m] = payload.date.split('-');
-  cache.remove("month_data_v2_" + y + "_" + parseInt(m) + "_" + payload.type);
-  cache.remove("month_data_v2_" + y + "_" + parseInt(m) + "_ANY");
+  cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + payload.type);
+  cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_ANY");
   
   return { success: true, id, checkoutUrl };
 }
@@ -276,7 +296,7 @@ function updateBookingStatus(p) {
 
       const cache = CacheService.getScriptCache();
       const [y, m] = bookingData.date.split('-');
-      cache.remove("month_data_v2_" + y + "_" + parseInt(m) + "_" + bookingData.type);
+      cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bookingData.type);
       return { success: true };
     }
   }
@@ -291,7 +311,7 @@ function deleteBooking(id) {
       const bData = JSON.parse(data[i][12]);
       sheet.deleteRow(i + 1);
       const [y, m] = bData.date.split('-');
-      CacheService.getScriptCache().remove("month_data_v2_" + y + "_" + parseInt(m) + "_" + bData.type);
+      CacheService.getScriptCache().remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bData.type);
       return { success: true };
     }
   }
