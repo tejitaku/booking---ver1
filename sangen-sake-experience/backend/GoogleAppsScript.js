@@ -1,7 +1,7 @@
 
 /**
  * ============================================================
- * Sangen Sake Experience - Backend Script (Robust & Transparent)
+ * Sangen Sake Experience - Backend Script (Auth & Capture Ready)
  * ============================================================
  */
 
@@ -10,10 +10,7 @@ function manualAuthorize() {
   const name = cal.getName();
   const ss = getSheet();
   const email = Session.getActiveUser().getEmail();
-  
-  // 外部通信権限を強制的に承認させるためのダミー呼び出し
   try { UrlFetchApp.fetch("https://google.com"); } catch(e) {}
-  
   GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized for Calendar, Sheets, Gmail, and External Requests.");
   return "Authorization successful for: " + name;
 }
@@ -36,13 +33,6 @@ const getProp = (key) => {
   return p ? p.trim() : null;
 };
 
-function doOptions(e) {
-  return ContentService.createTextOutput().setMimeType(ContentService.MimeType.JSON).append(JSON.stringify({ status: 'ok' }));
-}
-
-function doGet(e) { return handleRequest(e); }
-function doPost(e) { return handleRequest(e); }
-
 function handleRequest(e) {
   let result = {};
   try {
@@ -51,10 +41,8 @@ function handleRequest(e) {
     if (e.postData && e.postData.contents) {
       try { postData = JSON.parse(e.postData.contents); } catch (jsonErr) {}
     }
-    
     const action = (postData && postData.action) ? postData.action : params.action;
     const payload = { ...params, ...(postData && postData.payload ? postData.payload : {}) };
-
     const token = getProp('APP_SECURITY_TOKEN');
     if (token) {
       const receivedToken = (postData && postData.token) ? postData.token : (params.token);
@@ -79,13 +67,8 @@ function handleRequest(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function testConfig() {
-  try {
-    const ssId = getProp('SPREADSHEET_ID');
-    const ss = SpreadsheetApp.openById(ssId);
-    return { success: true, message: "Backend active", spreadsheetName: ss.getName() };
-  } catch (e) { return { success: false, error: e.message }; }
-}
+function doGet(e) { return handleRequest(e); }
+function doPost(e) { return handleRequest(e); }
 
 function getSheet() {
   const ssId = getProp('SPREADSHEET_ID');
@@ -128,48 +111,10 @@ function getCalendar() {
   return calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
 }
 
-function getMonthStatus(year, month, type, force) {
-  const cacheKey = "month_data_v3_" + year + "_" + month + "_" + (type || "ANY");
-  const cache = CacheService.getScriptCache();
-  if (!force) {
-    const cachedData = cache.get(cacheKey);
-    if (cachedData) return JSON.parse(cachedData);
-  }
-  const results = {};
-  const calendar = getCalendar();
-  const tz = Session.getScriptTimeZone();
-  const startDate = new Date(year, month - 1, 1, 0, 0, 0);
-  const endDate = new Date(year, month, 0, 23, 59, 59);
-  const bookingsMap = {};
-  try {
-    const sheet = getSheet();
-    const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][4] === 'CANCELLED' || rows[i][4] === 'REJECTED') continue;
-      const key = rows[i][2] + "_" + rows[i][3];
-      const total = Number(rows[i][5]) + Number(rows[i][6]) + Number(rows[i][7]) + Number(rows[i][8]);
-      bookingsMap[key] = (bookingsMap[key] || 0) + total;
-    }
-  } catch (e) {}
-  const events = calendar.getEvents(startDate, endDate);
-  events.forEach(event => {
-    if (event.isAllDayEvent()) return;
-    const d = event.getStartTime();
-    const dateStr = Utilities.formatDate(d, tz, "yyyy-MM-dd");
-    const timeStr = Utilities.formatDate(d, tz, "HH:mm");
-    if (!results[dateStr]) results[dateStr] = [];
-    results[dateStr].push({ time: timeStr, available: true, currentGroupCount: bookingsMap[dateStr + "_" + timeStr] || 0 });
-  });
-  for (let date in results) results[date].sort((a, b) => a.time.localeCompare(b.time));
-  try { cache.put(cacheKey, JSON.stringify(results), 600); } catch (e) {}
-  return results;
-}
-
 function createBooking(payload) {
   const stripeKey = getProp('STRIPE_SECRET_KEY');
   if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is missing.");
-  
-  logToSheet("CREATE_BOOKING", "Creating Stripe session for " + payload.representative.email);
+  logToSheet("CREATE_BOOKING", "Creating Stripe AUTH session for " + payload.representative.email);
   const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey, payload.date, payload.time);
   const pendingSheet = getPendingSheet();
   pendingSheet.appendRow([session.id, JSON.stringify(payload), new Date().toISOString()]);
@@ -184,10 +129,11 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
       'payment_method_types[]': 'card',
       'line_items[0][price_data][currency]': 'jpy',
       'line_items[0][price_data][product_data][name]': 'Sangen Sake Experience',
-      'line_items[0][price_data][product_data][description]': "Reservation: " + date + " " + time,
+      'line_items[0][price_data][product_data][description]': "Auth for Reservation: " + date + " " + time,
       'line_items[0][price_data][unit_amount]': String(Math.round(amount)),
       'line_items[0][quantity]': '1',
       'mode': 'payment',
+      'payment_intent_data[capture_method]': 'manual', // ← ここが重要：決済を保留にする
       'success_url': returnUrl + '?status=success&session_id={CHECKOUT_SESSION_ID}',
       'cancel_url': returnUrl + '?status=cancel',
       'customer_email': email,
@@ -199,8 +145,6 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
 
 function finalizeBooking(sessionId) {
   logToSheet("FINALIZE_START", "Session ID: " + sessionId);
-  if (!sessionId) throw new Error("Session ID is required.");
-  
   const stripeKey = getProp('STRIPE_SECRET_KEY');
   
   let session;
@@ -210,23 +154,18 @@ function finalizeBooking(sessionId) {
       muteHttpExceptions: true
     });
     session = JSON.parse(response.getContentText());
-    if (response.getResponseCode() !== 200) throw new Error("Stripe API Error: " + response.getContentText());
-  } catch(e) {
-    logToSheet("STRIPE_FETCH_ERROR", e.message);
-    throw e;
-  }
+  } catch(e) { throw e; }
 
-  logToSheet("STRIPE_STATUS", "Payment status: " + session.payment_status);
-  if (session.payment_status !== 'paid') {
-    return { success: false, error: 'PAYMENT_NOT_COMPLETED' };
-  }
+  // 決済ステータスの確認 (Authorizeが完了しているか)
+  if (session.payment_status === 'unpaid') return { success: false, error: 'PAYMENT_PENDING' };
   
+  const paymentIntentId = session.payment_intent;
+  logToSheet("STRIPE_PI", "PaymentIntent ID: " + paymentIntentId);
+
   const sheet = getSheet();
   const bookingsData = sheet.getDataRange().getValues();
   for (let i = 1; i < bookingsData.length; i++) {
-    const jsonStr = bookingsData[i][12];
-    if (jsonStr && jsonStr.indexOf(sessionId) !== -1) {
-      logToSheet("FINALIZE_SKIP", "Already finalized.");
+    if (bookingsData[i][12] && bookingsData[i][12].indexOf(sessionId) !== -1) {
       return { success: true, alreadyFinalized: true };
     }
   }
@@ -235,7 +174,6 @@ function finalizeBooking(sessionId) {
   const pendingData = pendingSheet.getDataRange().getValues();
   let bookingPayload = null;
   let rowIndex = -1;
-
   for (let i = 1; i < pendingData.length; i++) {
     if (pendingData[i][0] === sessionId) {
       bookingPayload = JSON.parse(pendingData[i][1]);
@@ -243,18 +181,14 @@ function finalizeBooking(sessionId) {
       break;
     }
   }
-
-  if (!bookingPayload) {
-    logToSheet("FINALIZE_ERROR", "Pending data not found for ID: " + sessionId);
-    throw new Error("Reservation data not found.");
-  }
+  if (!bookingPayload) throw new Error("Reservation data not found.");
 
   const id = 'bk_' + new Date().getTime();
   const createdAtISO = new Date().toISOString();
   bookingPayload.stripeSessionId = sessionId;
+  bookingPayload.paymentIntentId = paymentIntentId; // PaymentIntent IDを保存
   bookingPayload.createdAt = createdAtISO;
 
-  logToSheet("FINALIZE_WRITE", "Writing to Bookings sheet...");
   sheet.appendRow([
     id, bookingPayload.type, bookingPayload.date, bookingPayload.time, 'REQUESTED', 
     bookingPayload.adults, bookingPayload.adultsNonAlc, bookingPayload.children, bookingPayload.infants, 
@@ -262,25 +196,64 @@ function finalizeBooking(sessionId) {
     JSON.stringify(bookingPayload), createdAtISO
   ]);
   
-  // スプレッドシートの変更を即座に確定
   SpreadsheetApp.flush();
-
-  logToSheet("FINALIZE_EMAIL", "Sending emails...");
-  try { sendTemplatedEmail('RECEIVED', bookingPayload); } catch (e) { logToSheet("EMAIL_ERROR_CUST", e.message); }
-
+  try { sendTemplatedEmail('RECEIVED', bookingPayload); } catch (e) {}
   try {
     const templates = getEmailTemplate();
     const adminEmail = templates['ADMIN_NOTIFY_EMAIL'];
-    if (adminEmail) {
-      GmailApp.sendEmail(adminEmail, "[Sangen] New Booking Request", "A new booking has been finalized.\nCustomer: " + bookingPayload.representative.lastName);
-    }
-  } catch (e) { logToSheet("EMAIL_ERROR_ADMIN", e.message); }
-
-  logToSheet("FINALIZE_CLEANUP", "Deleting pending row: " + rowIndex);
+    if (adminEmail) GmailApp.sendEmail(adminEmail, "[Sangen] New Auth Booking", "New booking auth'd. Please Confirm or Reject.");
+  } catch (e) {}
   try { pendingSheet.deleteRow(rowIndex); } catch(e) {}
 
-  logToSheet("FINALIZE_SUCCESS", "All steps completed for ID: " + id);
   return { success: true, id: id };
+}
+
+function updateBookingStatus(p) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  const stripeKey = getProp('STRIPE_SECRET_KEY');
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == p.id) {
+      let b = JSON.parse(data[i][12]);
+      const piId = b.paymentIntentId;
+
+      if (p.status) {
+        // --- Stripe連動ロジック ---
+        if (p.status === 'CONFIRMED' && piId) {
+          logToSheet("STRIPE_CAPTURE", "Capturing " + piId);
+          try {
+            UrlFetchApp.fetch('https://api.stripe.com/v1/payment_intents/' + piId + '/capture', {
+              method: 'post',
+              headers: { 'Authorization': 'Bearer ' + stripeKey }
+            });
+          } catch(e) {
+            logToSheet("CAPTURE_ERROR", e.message);
+            throw new Error("Stripe Capture Failed: " + e.message);
+          }
+        } else if ((p.status === 'REJECTED' || p.status === 'CANCELLED') && piId) {
+          logToSheet("STRIPE_CANCEL", "Cancelling/Refunding " + piId);
+          try {
+            // 保留解除または返金
+            UrlFetchApp.fetch('https://api.stripe.com/v1/payment_intents/' + piId + '/cancel', {
+              method: 'post',
+              headers: { 'Authorization': 'Bearer ' + stripeKey },
+              muteHttpExceptions: true // すでに確定済みの場合はエラーになるため
+            });
+          } catch(e) { logToSheet("CANCEL_ERROR", e.message); }
+        }
+
+        sheet.getRange(i + 1, 5).setValue(p.status);
+        b.status = p.status;
+        sendTemplatedEmail(p.status, b);
+      }
+      
+      if (p.secondaryStatus !== undefined) b.secondaryStatus = p.secondaryStatus;
+      sheet.getRange(i + 1, 13).setValue(JSON.stringify(b));
+      return { success: true };
+    }
+  }
+  return { success: false };
 }
 
 function getBookings() {
@@ -293,27 +266,6 @@ function getBookings() {
       return b;
     } catch(e) { return null; }
   }).filter(b => b !== null);
-}
-
-function updateBookingStatus(p) {
-  const sheet = getSheet();
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == p.id) {
-      let b = JSON.parse(data[i][12]);
-      if (p.status) {
-        sheet.getRange(i + 1, 5).setValue(p.status);
-        b.status = p.status;
-        if (p.status === 'CONFIRMED') sendTemplatedEmail('CONFIRMED', b);
-        if (p.status === 'REJECTED') sendTemplatedEmail('REJECTED', b);
-        if (p.status === 'CANCELLED') sendTemplatedEmail('CANCELLED', b);
-      }
-      if (p.secondaryStatus !== undefined) b.secondaryStatus = p.secondaryStatus;
-      sheet.getRange(i + 1, 13).setValue(JSON.stringify(b));
-      return { success: true };
-    }
-  }
-  return { success: false };
 }
 
 function deleteBooking(id) {
@@ -332,18 +284,11 @@ function sendTemplatedEmail(type, booking) {
   const templates = getEmailTemplate();
   let sub = templates[type + '_SUBJECT'];
   let bodyRaw = templates[type + '_BODY'];
-  
-  if (!sub || !bodyRaw) {
-    if (type === 'RECEIVED') {
-      sub = "Reservation Request Received - {{name}}";
-      bodyRaw = "Dear {{name}},\n\nWe have received your reservation request for {{date}} at {{time}}.\n\nThank you,\nSangen Sake Experience";
-    } else return;
-  }
+  if (!sub || !bodyRaw) return;
 
   const name = booking.representative.lastName + ' ' + booking.representative.firstName;
   const subject = sub.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time);
   const message = bodyRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time).replace(/{{type}}/g, booking.type);
-
   GmailApp.sendEmail(booking.representative.email, subject, message, { name: "Sangen Sake Experience" });
 }
 
@@ -369,4 +314,33 @@ function updateEmailTemplate(p) {
 
 function login(p) { 
   return (p.email === 'admin@sangen.com' && p.password === 'sake') ? { success: true } : { success: false }; 
+}
+
+function getMonthStatus(year, month, type, force) {
+  const results = {};
+  const calendar = getCalendar();
+  const tz = Session.getScriptTimeZone();
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0);
+  const endDate = new Date(year, month, 0, 23, 59, 59);
+  const bookingsMap = {};
+  try {
+    const sheet = getSheet();
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][4] === 'CANCELLED' || rows[i][4] === 'REJECTED') continue;
+      const key = rows[i][2] + "_" + rows[i][3];
+      const total = Number(rows[i][5]) + Number(rows[i][6]) + Number(rows[i][7]) + Number(rows[i][8]);
+      bookingsMap[key] = (bookingsMap[key] || 0) + total;
+    }
+  } catch (e) {}
+  const events = calendar.getEvents(startDate, endDate);
+  events.forEach(event => {
+    if (event.isAllDayEvent()) return;
+    const d = event.getStartTime();
+    const dateStr = Utilities.formatDate(d, tz, "yyyy-MM-dd");
+    const timeStr = Utilities.formatDate(d, tz, "HH:mm");
+    if (!results[dateStr]) results[dateStr] = [];
+    results[dateStr].push({ time: timeStr, available: true, currentGroupCount: bookingsMap[dateStr + "_" + timeStr] || 0 });
+  });
+  return results;
 }
