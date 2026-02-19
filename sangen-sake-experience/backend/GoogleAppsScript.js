@@ -1,7 +1,17 @@
 
 /**
- * Sangen Sake Experience - Backend Script
+ * ============================================================
+ * Sangen Sake Experience - Backend Script (Optimized)
+ * ============================================================
  */
+
+function manualAuthorize() {
+  const email = Session.getActiveUser().getEmail();
+  const subject = "Sangen System: Authorization Check";
+  const body = "This is a dummy email to trigger the Google permission dialog.";
+  GmailApp.sendEmail(email, subject, body);
+  return "Authorization process triggered.";
+}
 
 const getProp = (key) => PropertiesService.getScriptProperties().getProperty(key);
 
@@ -32,7 +42,7 @@ function handleRequest(e) {
 
     if (action === 'testConfig') result = testConfig();
     else if (action === 'getAvailability') result = getAvailability(payload.date);
-    else if (action === 'getMonthStatus') result = getMonthStatus(Number(payload.year), Number(payload.month));
+    else if (action === 'getMonthStatus') result = getMonthStatus(Number(payload.year), Number(payload.month), payload.type);
     else if (action === 'getBookings') result = getBookings();
     else if (action === 'createBooking') result = createBooking(payload);
     else if (action === 'updateStatus') result = updateBookingStatus(payload);
@@ -51,7 +61,6 @@ function handleRequest(e) {
 function testConfig() {
   try {
     const ssId = getProp('SPREADSHEET_ID');
-    if (!ssId) throw new Error("SPREADSHEET_ID is missing.");
     SpreadsheetApp.openById(ssId);
     return { success: true, message: "Backend is active." };
   } catch (e) {
@@ -80,21 +89,6 @@ function getSettingsSheet() {
     sheet = ss.insertSheet(sheetName);
     sheet.appendRow(['Key', 'Value']);
   }
-  
-  // テンプレートが空の場合のみデフォルトを投入
-  if (sheet.getLastRow() <= 1) {
-    const defaults = [
-      ['RECEIVED_SUBJECT', '【Sangen】予約リクエストを受け付けました / Reservation Request Received'],
-      ['RECEIVED_BODY', '{{name}} 様\n\nこの度はSangen Sake Experienceへのご予約リクエストありがとうございます。\n下記の日程でリクエストを承りました。\n\n日時：{{date}} {{time}}\nプラン：{{type}}\n\n現在、予約状況を確認しております。確定まで最大3営業日ほどお時間をいただく場合がございますので、そのままお待ちください。\n予約が確定しましたら、別途「確定メール」をお送りいたします。'],
-      ['CONFIRMED_SUBJECT', '【Sangen】予約が確定しました / Your reservation is confirmed!'],
-      ['CONFIRMED_BODY', '{{name}} 様\n\nお待たせいたしました。ご予約が確定いたしました！\n\n日時：{{date}} {{time}}\nプラン：{{type}}\n\n当日、皆様にお会いできることを楽しみにしております。'],
-      ['REJECTED_SUBJECT', '【Sangen】ご予約をお受けすることができませんでした / Reservation Update'],
-      ['REJECTED_BODY', '{{name}} 様\n\nこの度はご予約リクエストをいただき誠にありがとうございました。\n大変申し訳ございませんが、ご希望の日時は満席のためご予約を承ることができませんでした。\n\nまたの機会がございましたら、ぜひよろしくお願い申し上げます。'],
-      ['CANCELLED_SUBJECT', '【Sangen】キャンセル・返金手続き完了のお知らせ / Cancellation Confirmed'],
-      ['CANCELLED_BODY', '{{name}} 様\n\nご予約のキャンセル手続きが完了いたしました。\n\n日時：{{date}} {{time}}\n返金予定額：¥{{refund_amount}}\n\nStripeを通じて返金処理を行っております。クレジットカード会社により反映までお時間がかかる場合がございます。ご了承ください。']
-    ];
-    defaults.forEach(row => sheet.appendRow(row));
-  }
   return sheet;
 }
 
@@ -103,28 +97,59 @@ function getCalendar() {
   return calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
 }
 
-function getMonthStatus(year, month) {
+/**
+ * 月間ステータスの取得（CacheServiceによる高速化）
+ */
+function getMonthStatus(year, month, type) {
+  const cacheKey = "month_status_" + year + "_" + month + "_" + (type || "ANY");
+  const cache = CacheService.getScriptCache();
+  const cachedData = cache.get(cacheKey);
+  
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+
   const results = {};
   const calendar = getCalendar();
   const tz = Session.getScriptTimeZone();
   const startDate = new Date(year, month - 1, 1, 0, 0, 0);
   const endDate = new Date(year, month, 0, 23, 59, 59);
+  
+  // カレンダーからイベントを取得
   const events = calendar.getEvents(startDate, endDate);
   events.forEach(event => {
     if (event.isAllDayEvent()) return;
     results[Utilities.formatDate(event.getStartTime(), tz, "yyyy-MM-dd")] = true;
   });
+
+  // 10分間キャッシュ (600秒)
+  cache.put(cacheKey, JSON.stringify(results), 600);
   return results;
 }
 
+/**
+ * 特定日の空き枠取得（CacheServiceによる高速化）
+ */
 function getAvailability(dateStr) {
+  const cacheKey = "availability_" + dateStr;
+  const cache = CacheService.getScriptCache();
+  const cachedData = cache.get(cacheKey);
+  
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+
   const events = getCalendar().getEventsForDay(new Date(dateStr));
   const tz = Session.getScriptTimeZone();
-  return events.filter(e => !e.isAllDayEvent()).map(event => ({ 
+  const slots = events.filter(e => !e.isAllDayEvent()).map(event => ({ 
     time: Utilities.formatDate(event.getStartTime(), tz, "HH:mm"), 
     available: true, 
     currentGroupCount: 0 
   })).sort((a, b) => a.time.localeCompare(b.time));
+
+  // 5分間キャッシュ (300秒)
+  cache.put(cacheKey, JSON.stringify(slots), 300);
+  return slots;
 }
 
 function createBooking(payload) {
@@ -154,8 +179,15 @@ function createBooking(payload) {
     JSON.stringify(payload), createdAtISO
   ]);
   
-  // 自動返信メール (リクエスト受付)
-  sendTemplatedEmail('RECEIVED', payload);
+  try {
+    sendTemplatedEmail('RECEIVED', payload);
+  } catch (e) {
+    console.error("Initial email failed: " + e.toString());
+  }
+
+  // 予約が作成されたので関連するキャッシュをクリア
+  const cache = CacheService.getScriptCache();
+  cache.remove("availability_" + payload.date);
   
   return { success: true, id, checkoutUrl };
 }
@@ -228,6 +260,11 @@ function updateBookingStatus(p) {
       if (p.notes !== undefined) bookingData.adminNotes = p.notes;
       
       sheet.getRange(i + 1, 13).setValue(JSON.stringify(bookingData));
+
+      // ステータス更新時も関連キャッシュをクリア
+      const cache = CacheService.getScriptCache();
+      cache.remove("availability_" + bookingData.date);
+      
       return { success: true };
     }
   }
@@ -239,16 +276,15 @@ function deleteBooking(id) {
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == id) {
+      const date = JSON.parse(data[i][12]).date;
       sheet.deleteRow(i + 1);
+      CacheService.getScriptCache().remove("availability_" + date);
       return { success: true };
     }
   }
   return { success: false };
 }
 
-/**
- * テストメールを送信する
- */
 function sendTestEmail(payload) {
   const mockBooking = {
     representative: { firstName: 'Test', lastName: 'User', email: Session.getActiveUser().getEmail() },
@@ -261,19 +297,13 @@ function sendTestEmail(payload) {
   return { success: true, sentTo: mockBooking.representative.email };
 }
 
-/**
- * メールテンプレートを利用してメールを送信する
- */
 function sendTemplatedEmail(type, booking) {
   try {
     const templates = getEmailTemplate();
     const subjectRaw = templates[type + '_SUBJECT'];
     const bodyRaw = templates[type + '_BODY'];
     
-    if (!subjectRaw || !bodyRaw) {
-      console.warn("Template missing for: " + type);
-      return;
-    }
+    if (!subjectRaw || !bodyRaw) return;
 
     const name = booking.representative.lastName + ' ' + booking.representative.firstName;
     const date = booking.date;
@@ -281,25 +311,11 @@ function sendTemplatedEmail(type, booking) {
     const bType = booking.type;
     const refund = booking.refundAmount ? booking.refundAmount.toLocaleString() : '0';
 
-    let subject = subjectRaw
-      .replace(/{{name}}/g, name)
-      .replace(/{{date}}/g, date)
-      .replace(/{{time}}/g, time)
-      .replace(/{{type}}/g, bType);
+    let subject = subjectRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, date).replace(/{{time}}/g, time).replace(/{{type}}/g, bType);
+    let body = bodyRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, date).replace(/{{time}}/g, time).replace(/{{type}}/g, bType).replace(/{{refund_amount}}/g, refund);
 
-    let body = bodyRaw
-      .replace(/{{name}}/g, name)
-      .replace(/{{date}}/g, date)
-      .replace(/{{time}}/g, time)
-      .replace(/{{type}}/g, bType)
-      .replace(/{{refund_amount}}/g, refund);
-
-    GmailApp.sendEmail(booking.representative.email, subject, body, {
-      name: "Sangen Sake Experience"
-    });
-    console.log("Email sent to: " + booking.representative.email + " (Type: " + type + ")");
+    GmailApp.sendEmail(booking.representative.email, subject, body, { name: "Sangen Sake Experience" });
   } catch (e) {
-    console.error("Email Sending Error: " + e.toString());
     throw new Error("メール送信エラー: " + e.toString());
   }
 }
@@ -307,9 +323,7 @@ function sendTemplatedEmail(type, booking) {
 function getEmailTemplate() {
   const data = getSettingsSheet().getDataRange().getValues();
   const templates = {};
-  data.slice(1).forEach(row => {
-    if (row[0]) templates[row[0]] = row[1];
-  });
+  data.slice(1).forEach(row => { if (row[0]) templates[row[0]] = row[1]; });
   return templates;
 }
 
