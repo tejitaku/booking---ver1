@@ -250,6 +250,42 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
         </div>
 
         <div className="border-t pt-4 mt-6">
+          {totalPeople > 0 && (
+            <div className="space-y-1.5 mb-4 text-[11px] text-stone-500 bg-stone-50/50 p-3 rounded-lg border border-stone-100">
+              {adults > 0 && (
+                <div className="flex justify-between">
+                  <span>Adult (Age 20+) × {adults}</span>
+                  <span>¥{priceDetails.adultTotal.toLocaleString()}</span>
+                </div>
+              )}
+              {adultsNonAlc > 0 && (
+                <div className="flex justify-between">
+                  <span>Adult (Alcohol-Free) × {adultsNonAlc}</span>
+                  <span>¥{priceDetails.nonAlcTotal.toLocaleString()}</span>
+                </div>
+              )}
+              {children > 0 && (
+                <div className="flex justify-between">
+                  <span>Child (Age 5-12) × {children}</span>
+                  <span>¥{priceDetails.childTotal.toLocaleString()}</span>
+                </div>
+              )}
+              {infants > 0 && (
+                <div className="flex justify-between">
+                  <span>Child (Age 0-4) × {infants}</span>
+                  <span>¥0</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1.5 border-t border-stone-200 text-stone-600 font-medium">
+                <span>Subtotal</span>
+                <span>¥{priceDetails.subTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>System Fee (1.5%)</span>
+                <span>¥{priceDetails.bookingFee.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
           <div className="flex justify-between items-end mb-4"><span className="font-bold text-gray-700">Total (Inc. Tax)</span><span className="serif font-bold text-2xl text-stone-900">¥{priceDetails.total.toLocaleString()}</span></div>
           <button onClick={() => onProceed({ type: reservationType, date: selectedDate, time: selectedTime, adults, adultsNonAlc, children, infants, totalPrice: priceDetails.total })} disabled={!canRequest} className={`w-full py-3 px-4 rounded font-semibold text-white transition-colors ${canRequest ? 'bg-stone-900 hover:bg-stone-800' : 'bg-gray-300 cursor-not-allowed'}`}>Request Reservation</button>
         </div>
