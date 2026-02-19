@@ -84,7 +84,7 @@ const App: React.FC = () => {
   if (route === 'success') {
     return (
       <div className="min-h-screen bg-transparent flex items-center justify-center p-4 text-center">
-        <div className="bg-white max-w-2xl w-full p-10 rounded-lg shadow-xl border border-gray-100">
+        <div className="bg-white max-w-2xl w-full p-10 rounded-lg border border-gray-100">
           {isFinalizing ? (
             <div className="py-10 animate-pulse">
               <Loader2 size={48} className="mx-auto mb-6 text-stone-600 animate-spin" />
