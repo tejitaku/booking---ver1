@@ -1,28 +1,17 @@
 
 /**
  * ============================================================
- * Sangen Sake Experience - Backend Script (Robust & Fast)
+ * Sangen Sake Experience - Backend Script (Robust & Transparent)
  * ============================================================
  */
 
-/**
- * 権限承認を確実に発生させるための関数
- * GASエディタでこれを選択して実行してください。
- */
 function manualAuthorize() {
-  // 1. カレンダー権限
   const cal = getCalendar();
   const name = cal.getName();
-  
-  // 2. スプレッドシート権限
   const ss = getSheet();
-  const rows = ss.getLastRow();
-  
-  // 3. Gmail権限
   const email = Session.getActiveUser().getEmail();
-  GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized to access your calendar, spreadsheets, and email.");
-  
-  return "Authorization successful for: " + name + " (Calendar) and " + email + " (Gmail).";
+  GmailApp.sendEmail(email, "Sangen System: Authorization Successful", "The system is now authorized.");
+  return "Authorization successful for: " + name;
 }
 
 const getProp = (key) => {
@@ -59,11 +48,11 @@ function handleRequest(e) {
     else if (action === 'getMonthStatus') result = getMonthStatus(Number(payload.year), Number(payload.month), payload.type, payload.force);
     else if (action === 'getBookings') result = getBookings();
     else if (action === 'createBooking') result = createBooking(payload);
+    else if (action === 'finalizeBooking') result = finalizeBooking(payload.sessionId);
     else if (action === 'updateStatus') result = updateBookingStatus(payload);
     else if (action === 'deleteBooking') result = deleteBooking(payload.id);
     else if (action === 'getEmailTemplate') result = getEmailTemplate();
     else if (action === 'updateEmailTemplate') result = updateEmailTemplate(payload);
-    else if (action === 'sendTestEmail') result = sendTestEmail(payload);
     else if (action === 'login') result = login(payload);
     else throw new Error('INVALID_ACTION: ' + action);
   } catch (err) {
@@ -75,32 +64,31 @@ function handleRequest(e) {
 function testConfig() {
   try {
     const ssId = getProp('SPREADSHEET_ID');
-    const calId = getProp('CALENDAR_ID');
     const ss = SpreadsheetApp.openById(ssId);
-    const cal = calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
-    
-    return { 
-      success: true, 
-      message: "Backend is active.",
-      calendarName: cal ? cal.getName() : "Not Found",
-      calendarIdUsed: cal ? cal.getId() : "Default",
-      spreadsheetName: ss ? ss.getName() : "Not Found",
-      timeZone: Session.getScriptTimeZone()
-    };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+    return { success: true, message: "Backend active", spreadsheetName: ss.getName() };
+  } catch (e) { return { success: false, error: e.message }; }
 }
 
 function getSheet() {
   const ssId = getProp('SPREADSHEET_ID');
-  if (!ssId) throw new Error("SPREADSHEET_ID is not set in Script Properties.");
   const ss = SpreadsheetApp.openById(ssId);
   const sheetName = 'Bookings';
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     sheet.appendRow(['ID', 'Type', 'Date', 'Time', 'Status', 'Adults', 'NonAlc', 'Children', 'Infants', 'Price', 'Name', 'Email', 'JSONData', 'CreatedAt']);
+  }
+  return sheet;
+}
+
+function getPendingSheet() {
+  const ssId = getProp('SPREADSHEET_ID');
+  const ss = SpreadsheetApp.openById(ssId);
+  const sheetName = 'PendingBookings';
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(['StripeSessionID', 'JSONPayload', 'CreatedAt']);
   }
   return sheet;
 }
@@ -119,137 +107,57 @@ function getSettingsSheet() {
 
 function getCalendar() {
   const calId = getProp('CALENDAR_ID');
-  const cal = calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
-  if (!cal) throw new Error("Calendar not found. Check CALENDAR_ID in properties.");
-  return cal;
+  return calId ? CalendarApp.getCalendarById(calId) : CalendarApp.getDefaultCalendar();
 }
 
-/**
- * 月間ステータスと詳細スロットの一括取得
- */
 function getMonthStatus(year, month, type, force) {
   const cacheKey = "month_data_v3_" + year + "_" + month + "_" + (type || "ANY");
   const cache = CacheService.getScriptCache();
-  
   if (!force) {
-    try {
-      const cachedData = cache.get(cacheKey);
-      if (cachedData) return JSON.parse(cachedData);
-    } catch (e) { console.warn("Cache read failed"); }
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) return JSON.parse(cachedData);
   }
-
   const results = {};
   const calendar = getCalendar();
   const tz = Session.getScriptTimeZone();
-  
   const startDate = new Date(year, month - 1, 1, 0, 0, 0);
   const endDate = new Date(year, month, 0, 23, 59, 59);
-  
-  // 1. 予約状況の取得
   const bookingsMap = {};
   try {
     const sheet = getSheet();
     const rows = sheet.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
-      const bStatus = rows[i][4];
-      if (bStatus === 'CANCELLED' || bStatus === 'REJECTED') continue;
+      if (rows[i][4] === 'CANCELLED' || rows[i][4] === 'REJECTED') continue;
       const key = rows[i][2] + "_" + rows[i][3];
       const total = Number(rows[i][5]) + Number(rows[i][6]) + Number(rows[i][7]) + Number(rows[i][8]);
       bookingsMap[key] = (bookingsMap[key] || 0) + total;
     }
   } catch (e) {}
-
-  // 2. カレンダーからイベント取得
   const events = calendar.getEvents(startDate, endDate);
   events.forEach(event => {
     if (event.isAllDayEvent()) return;
-    
     const d = event.getStartTime();
     const dateStr = Utilities.formatDate(d, tz, "yyyy-MM-dd");
     const timeStr = Utilities.formatDate(d, tz, "HH:mm");
-    
     if (!results[dateStr]) results[dateStr] = [];
-    
-    const currentCount = bookingsMap[dateStr + "_" + timeStr] || 0;
-    results[dateStr].push({
-      time: timeStr,
-      available: true,
-      currentGroupCount: currentCount
-    });
+    results[dateStr].push({ time: timeStr, available: true, currentGroupCount: bookingsMap[dateStr + "_" + timeStr] || 0 });
   });
-
-  for (let date in results) {
-    results[date].sort((a, b) => a.time.localeCompare(b.time));
-  }
-
-  // 10分間キャッシュ
-  try {
-    const stringified = JSON.stringify(results);
-    if (stringified.length < 100000) {
-      cache.put(cacheKey, stringified, 600);
-    }
-  } catch (e) {}
-
+  for (let date in results) results[date].sort((a, b) => a.time.localeCompare(b.time));
+  try { cache.put(cacheKey, JSON.stringify(results), 600); } catch (e) {}
   return results;
 }
 
 function createBooking(payload) {
   const stripeKey = getProp('STRIPE_SECRET_KEY');
-  let checkoutUrl = null;
-  let sessionId = null;
-  if (payload.totalPrice > 0 && stripeKey) {
-    try {
-      const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey, payload.date, payload.time);
-      checkoutUrl = session.url;
-      sessionId = session.id;
-    } catch (e) { console.error("Stripe Error: " + e.message); }
-  }
+  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is missing in Script Properties.");
   
-  const id = 'bk_' + new Date().getTime();
-  const now = new Date();
-  const createdAtISO = now.toISOString();
-  const sheet = getSheet();
-  
-  payload.stripeSessionId = sessionId;
-  payload.createdAt = createdAtISO;
-
-  sheet.appendRow([
-    id, payload.type, payload.date, payload.time, 'REQUESTED', 
-    payload.adults, payload.adultsNonAlc, payload.children, payload.infants, 
-    payload.totalPrice, payload.representative.lastName, payload.representative.email, 
-    JSON.stringify(payload), createdAtISO
-  ]);
-  
-  // 顧客への自動返信
-  try { sendTemplatedEmail('RECEIVED', payload); } catch (e) {}
-
-  // 管理者への通知
-  try {
-    const templates = getEmailTemplate();
-    const adminEmail = templates['ADMIN_NOTIFY_EMAIL'];
-    if (adminEmail) {
-      const subject = "[Sangen] New Reservation Request: " + payload.representative.lastName + " (" + payload.date + ")";
-      const body = "New booking request received.\n\n" +
-                   "Customer: " + payload.representative.lastName + " " + payload.representative.firstName + "\n" +
-                   "Plan: " + payload.type + "\n" +
-                   "Date: " + payload.date + " " + payload.time + "\n" +
-                   "Price: ¥" + payload.totalPrice.toLocaleString() + "\n\n" +
-                   "Please review in the admin panel.";
-      GmailApp.sendEmail(adminEmail, subject, body, { name: "Sangen Notification" });
-    }
-  } catch (adminErr) { console.error("Admin Notify Error: " + adminErr.message); }
-
-  // キャッシュクリア
-  const cache = CacheService.getScriptCache();
-  const [y, m] = payload.date.split('-');
-  cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + payload.type);
-  cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_ANY");
-  
-  return { success: true, id, checkoutUrl };
+  const session = createStripeSession(payload.totalPrice, payload.representative.email, payload.returnUrl, stripeKey, payload.date, payload.time);
+  const pendingSheet = getPendingSheet();
+  pendingSheet.appendRow([session.id, JSON.stringify(payload), new Date().toISOString()]);
+  return { success: true, checkoutUrl: session.url };
 }
 
 function createStripeSession(amount, email, returnUrl, key, date, time) {
-  const jstTimeDisplay = date + " " + time + " (JST)";
   const options = {
     method: 'post',
     headers: { 'Authorization': 'Bearer ' + key },
@@ -257,17 +165,125 @@ function createStripeSession(amount, email, returnUrl, key, date, time) {
       'payment_method_types[]': 'card',
       'line_items[0][price_data][currency]': 'jpy',
       'line_items[0][price_data][product_data][name]': 'Sangen Sake Experience',
-      'line_items[0][price_data][product_data][description]': "Reservation: " + jstTimeDisplay,
+      'line_items[0][price_data][product_data][description]': "Reservation: " + date + " " + time,
       'line_items[0][price_data][unit_amount]': String(Math.round(amount)),
       'line_items[0][quantity]': '1',
       'mode': 'payment',
-      'success_url': returnUrl + '?status=success',
+      'success_url': returnUrl + '?status=success&session_id={CHECKOUT_SESSION_ID}',
       'cancel_url': returnUrl + '?status=cancel',
       'customer_email': email,
     }
   };
   const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions', options);
   return JSON.parse(response.getContentText());
+}
+
+function finalizeBooking(sessionId) {
+  if (!sessionId) throw new Error("Session ID is required.");
+  
+  const stripeKey = getProp('STRIPE_SECRET_KEY');
+  if (!stripeKey) throw new Error("Stripe Key not found.");
+
+  const response = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + sessionId, {
+    headers: { 'Authorization': 'Bearer ' + stripeKey }
+  });
+  const session = JSON.parse(response.getContentText());
+  
+  if (session.payment_status !== 'paid') {
+    return { success: false, error: 'PAYMENT_NOT_COMPLETED' };
+  }
+  
+  const sheet = getSheet();
+  const bookingsData = sheet.getDataRange().getValues();
+  
+  // セッションIDの重複チェック
+  for (let i = 1; i < bookingsData.length; i++) {
+    const jsonStr = bookingsData[i][12];
+    if (jsonStr) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.stripeSessionId === sessionId) {
+          return { success: true, alreadyFinalized: true };
+        }
+      } catch(e) {}
+    }
+  }
+
+  const pendingSheet = getPendingSheet();
+  const pendingData = pendingSheet.getDataRange().getValues();
+  let bookingPayload = null;
+  let rowIndex = -1;
+
+  for (let i = 1; i < pendingData.length; i++) {
+    if (pendingData[i][0] === sessionId) {
+      bookingPayload = JSON.parse(pendingData[i][1]);
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (!bookingPayload) throw new Error("Reservation data for this session was not found. Please contact support.");
+
+  const id = 'bk_' + new Date().getTime();
+  const createdAtISO = new Date().toISOString();
+  bookingPayload.stripeSessionId = sessionId;
+  bookingPayload.createdAt = createdAtISO;
+
+  // 1. まずスプレッドシートに書き込む (一番重要)
+  sheet.appendRow([
+    id, 
+    bookingPayload.type, 
+    bookingPayload.date, 
+    bookingPayload.time, 
+    'REQUESTED', 
+    bookingPayload.adults, 
+    bookingPayload.adultsNonAlc, 
+    bookingPayload.children, 
+    bookingPayload.infants, 
+    bookingPayload.totalPrice, 
+    bookingPayload.representative.lastName, 
+    bookingPayload.representative.email, 
+    JSON.stringify(bookingPayload), 
+    createdAtISO
+  ]);
+
+  // 2. メール送信 (失敗しても登録は維持されるようtry-catch)
+  try {
+    sendTemplatedEmail('RECEIVED', bookingPayload);
+  } catch (emailErr) {
+    console.error("Confirmation Email Error: " + emailErr);
+  }
+
+  try {
+    const templates = getEmailTemplate();
+    const adminEmail = templates['ADMIN_NOTIFY_EMAIL'];
+    if (adminEmail) {
+      GmailApp.sendEmail(adminEmail, "[Sangen] New Booking Request Received (Paid)", 
+        "A new booking has been finalized after successful payment.\n\n" +
+        "Name: " + bookingPayload.representative.lastName + " " + bookingPayload.representative.firstName + "\n" +
+        "Date: " + bookingPayload.date + " " + bookingPayload.time + "\n" +
+        "Type: " + bookingPayload.type + "\n" +
+        "Total Price: ¥" + bookingPayload.totalPrice.toLocaleString()
+      );
+    }
+  } catch (adminEmailErr) {
+    console.error("Admin Email Error: " + adminEmailErr);
+  }
+
+  // 3. 最後に仮予約データを削除
+  try {
+    pendingSheet.deleteRow(rowIndex);
+  } catch(e) {}
+
+  // キャッシュクリア
+  try {
+    const cache = CacheService.getScriptCache();
+    const [y, m] = bookingPayload.date.split('-');
+    cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bookingPayload.type);
+    cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_ANY");
+  } catch(e) {}
+
+  return { success: true, id: id };
 }
 
 function getBookings() {
@@ -285,35 +301,18 @@ function getBookings() {
 function updateBookingStatus(p) {
   const sheet = getSheet();
   const data = sheet.getDataRange().getValues();
-  const nowISO = new Date().toISOString();
-
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == p.id) {
-      let bookingData = JSON.parse(data[i][12]);
-      let oldStatus = bookingData.status;
-
+      let b = JSON.parse(data[i][12]);
       if (p.status) {
         sheet.getRange(i + 1, 5).setValue(p.status);
-        bookingData.status = p.status;
-        if (p.status === 'CONFIRMED' && oldStatus !== 'CONFIRMED') {
-          bookingData.confirmedAt = nowISO;
-          sendTemplatedEmail('CONFIRMED', bookingData);
-        }
-        if (p.status === 'REJECTED' && oldStatus !== 'REJECTED') sendTemplatedEmail('REJECTED', bookingData);
-        if (p.status === 'CANCELLED' && oldStatus !== 'CANCELLED') {
-          bookingData.cancelledAt = nowISO;
-          if (p.refundAmount !== undefined) bookingData.refundAmount = p.refundAmount;
-          sendTemplatedEmail('CANCELLED', bookingData);
-        }
+        b.status = p.status;
+        if (p.status === 'CONFIRMED') sendTemplatedEmail('CONFIRMED', b);
+        if (p.status === 'REJECTED') sendTemplatedEmail('REJECTED', b);
+        if (p.status === 'CANCELLED') sendTemplatedEmail('CANCELLED', b);
       }
-      if (p.secondaryStatus !== undefined) bookingData.secondaryStatus = p.secondaryStatus;
-      if (p.notes !== undefined) bookingData.adminNotes = p.notes;
-      
-      sheet.getRange(i + 1, 13).setValue(JSON.stringify(bookingData));
-
-      const cache = CacheService.getScriptCache();
-      const [y, m] = bookingData.date.split('-');
-      cache.remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bookingData.type);
+      if (p.secondaryStatus !== undefined) b.secondaryStatus = p.secondaryStatus;
+      sheet.getRange(i + 1, 13).setValue(JSON.stringify(b));
       return { success: true };
     }
   }
@@ -325,57 +324,56 @@ function deleteBooking(id) {
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] == id) {
-      const bData = JSON.parse(data[i][12]);
       sheet.deleteRow(i + 1);
-      const [y, m] = bData.date.split('-');
-      CacheService.getScriptCache().remove("month_data_v3_" + y + "_" + parseInt(m) + "_" + bData.type);
       return { success: true };
     }
   }
   return { success: false };
 }
 
-function sendTestEmail(payload) {
-  const mockBooking = {
-    representative: { firstName: 'Test', lastName: 'User', email: Session.getActiveUser().getEmail() },
-    date: '202X-XX-XX', time: '12:00', type: 'PRIVATE', refundAmount: 10000
-  };
-  sendTemplatedEmail(payload.type, mockBooking);
-  return { success: true, sentTo: mockBooking.representative.email };
-}
-
 function sendTemplatedEmail(type, booking) {
-  try {
-    const templates = getEmailTemplate();
-    const subjectRaw = templates[type + '_SUBJECT'];
-    const bodyRaw = templates[type + '_BODY'];
-    if (!subjectRaw || !bodyRaw) return;
-    const name = booking.representative.lastName + ' ' + booking.representative.firstName;
-    const date = booking.date; const time = booking.time; const bType = booking.type;
-    const refund = booking.refundAmount ? booking.refundAmount.toLocaleString() : '0';
-    let subject = subjectRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, date).replace(/{{time}}/g, time).replace(/{{type}}/g, bType);
-    let body = bodyRaw.replace(/{{name}}/g, name).replace(/{{date}}/g, date).replace(/{{time}}/g, time).replace(/{{type}}/g, bType).replace(/{{refund_amount}}/g, refund);
-    GmailApp.sendEmail(booking.representative.email, subject, body, { name: "Sangen Sake Experience" });
-  } catch (e) { throw new Error("Email Error: " + e.toString()); }
+  const templates = getEmailTemplate();
+  let sub = templates[type + '_SUBJECT'];
+  let bodyRaw = templates[type + '_BODY'];
+  
+  // デフォルトテンプレート (管理画面で設定されていない場合のフォールバック)
+  if (!sub || !bodyRaw) {
+    if (type === 'RECEIVED') {
+      sub = "Reservation Request Received - {{name}}";
+      bodyRaw = "Dear {{name}},\n\nWe have received your reservation request for {{date}} at {{time}}.\nOur staff will contact you shortly to confirm your booking.\n\nThank you,\nSangen Sake Experience";
+    } else {
+      return; // 他のステータスはデフォルトなし
+    }
+  }
+
+  const name = booking.representative.lastName + ' ' + booking.representative.firstName;
+  const subject = sub.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time);
+  const message = bodyRaw
+    .replace(/{{name}}/g, name)
+    .replace(/{{date}}/g, booking.date)
+    .replace(/{{time}}/g, booking.time)
+    .replace(/{{type}}/g, booking.type);
+
+  GmailApp.sendEmail(booking.representative.email, subject, message, { name: "Sangen Sake Experience" });
 }
 
 function getEmailTemplate() {
   const data = getSettingsSheet().getDataRange().getValues();
-  const templates = {};
-  data.slice(1).forEach(row => { if (row[0]) templates[row[0]] = row[1]; });
-  return templates;
+  const t = {};
+  data.slice(1).forEach(r => { if (r[0]) t[r[0]] = r[1]; });
+  return t;
 }
 
-function updateEmailTemplate(payload) {
+function updateEmailTemplate(p) {
   const sheet = getSettingsSheet();
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === payload.key) {
-      sheet.getRange(i + 1, 2).setValue(payload.value);
+    if (data[i][0] === p.key) {
+      sheet.getRange(i + 1, 2).setValue(p.value);
       return { success: true };
     }
   }
-  sheet.appendRow([payload.key, payload.value]);
+  sheet.appendRow([p.key, p.value]);
   return { success: true };
 }
 
