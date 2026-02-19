@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Booking, GuestInfo } from '../types';
 import { Loader2, Lock, ArrowLeft, AlertCircle } from 'lucide-react';
@@ -119,7 +120,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ initialData, onBack, onSubmit
     `w-full mt-1 p-2 border rounded ${isError && showErrors ? 'border-red-500 bg-red-50' : 'border-gray-300'}`;
 
   return (
-    <div className="max-w-2xl mx-auto bg-white min-h-screen md:min-h-0 md:my-8 md:rounded-lg shadow-xl overflow-hidden">
+    <div className="max-w-2xl mx-auto bg-white min-h-screen md:min-h-0 md:my-8 md:rounded-lg border border-gray-100 overflow-hidden">
       <div className="bg-stone-900 text-white p-6 flex items-center relative">
         <button onClick={onBack} className="absolute left-4 p-2 hover:bg-stone-800 rounded">
           <ArrowLeft size={20} />
@@ -262,7 +263,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ initialData, onBack, onSubmit
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className={`w-full py-4 text-lg font-bold text-white rounded shadow-lg flex justify-center items-center space-x-2 ${
+            className={`w-full py-4 text-lg font-bold text-white rounded flex justify-center items-center space-x-2 ${
               loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-stone-900 hover:bg-stone-800'
             }`}
           >
