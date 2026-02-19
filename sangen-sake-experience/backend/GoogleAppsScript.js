@@ -220,7 +220,24 @@ function createBooking(payload) {
     JSON.stringify(payload), createdAtISO
   ]);
   
+  // 顧客への自動返信
   try { sendTemplatedEmail('RECEIVED', payload); } catch (e) {}
+
+  // 管理者への通知
+  try {
+    const templates = getEmailTemplate();
+    const adminEmail = templates['ADMIN_NOTIFY_EMAIL'];
+    if (adminEmail) {
+      const subject = "[Sangen] New Reservation Request: " + payload.representative.lastName + " (" + payload.date + ")";
+      const body = "New booking request received.\n\n" +
+                   "Customer: " + payload.representative.lastName + " " + payload.representative.firstName + "\n" +
+                   "Plan: " + payload.type + "\n" +
+                   "Date: " + payload.date + " " + payload.time + "\n" +
+                   "Price: ¥" + payload.totalPrice.toLocaleString() + "\n\n" +
+                   "Please review in the admin panel.";
+      GmailApp.sendEmail(adminEmail, subject, body, { name: "Sangen Notification" });
+    }
+  } catch (adminErr) { console.error("Admin Notify Error: " + adminErr.message); }
 
   // キャッシュクリア
   const cache = CacheService.getScriptCache();
