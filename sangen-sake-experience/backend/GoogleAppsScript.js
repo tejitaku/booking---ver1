@@ -325,7 +325,7 @@ function updateEmailTemplate(p) {
 }
 
 function login(p) { 
-  return (p.email === 'admin@sangen.com' && p.password === 'sake') ? { success: true } : { success: false }; 
+  return (p.email === 'info@san-gen.jp' && p.password === 'SakeSake2220_') ? { success: true } : { success: false }; 
 }
 
 function testConfig() {
