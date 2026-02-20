@@ -244,11 +244,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ initialData, onBack, onSubmit
         <section className={`bg-gray-50 p-4 rounded text-sm text-gray-700 space-y-3 ${showErrors && (errors['agreedPolicy'] || errors['agreedTerms']) ? 'border border-red-300 bg-red-50' : ''}`}>
           <label className="flex items-start space-x-2 cursor-pointer">
             <input type="checkbox" checked={agreedPolicy} onChange={e => setAgreedPolicy(e.target.checked)} className="mt-1" />
-            <span className={showErrors && errors['agreedPolicy'] ? 'text-red-600 font-bold' : ''}>I agree to the <a href="#" className="underline text-stone-800">Cancellation Policy</a> *</span>
+            <span className={showErrors && errors['agreedPolicy'] ? 'text-red-600 font-bold' : ''}>I agree to the <a href="https://san-gen.jp/tc" className="underline text-stone-800">Cancellation Policy</a> *</span>
           </label>
           <label className="flex items-start space-x-2 cursor-pointer">
             <input type="checkbox" checked={agreedTerms} onChange={e => setAgreedTerms(e.target.checked)} className="mt-1" />
-            <span className={showErrors && errors['agreedTerms'] ? 'text-red-600 font-bold' : ''}>I agree to the <a href="#" className="underline text-stone-800">Terms & Conditions</a> *</span>
+            <span className={showErrors && errors['agreedTerms'] ? 'text-red-600 font-bold' : ''}>I agree to the <a href="https://san-gen.jp/tc" className="underline text-stone-800">Terms & Conditions</a> *</span>
           </label>
         </section>
 
