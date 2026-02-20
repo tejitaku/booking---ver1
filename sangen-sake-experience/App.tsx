@@ -148,7 +148,7 @@ const App: React.FC = () => {
               <div className="text-gray-600 space-y-4 text-left md:text-center leading-relaxed">
                 <p>A confirmation email has been sent to your address. Please check your inbox.</p>
                 <p>Our staff will review your request and contact you within 3 days to finalize the booking.</p>
-                <p>If you don't hear from us, please email <a href="mailto:info@sangen-sake.jp" className="text-stone-900 font-bold underline">info@sangen-sake.jp</a>.</p>
+                <p>If you don't hear from us, please email <a href="mailto:info@sangen-sake.jp" className="text-stone-900 font-bold underline">info@san-gen.jp</a>.</p>
               </div>
               <button onClick={() => window.close()} className="mt-10 px-8 py-3 bg-stone-900 text-white rounded hover:bg-stone-800 transition font-bold">
                 Close
