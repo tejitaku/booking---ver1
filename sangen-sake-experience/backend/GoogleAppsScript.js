@@ -205,7 +205,7 @@ function finalizeBooking(sessionId) {
   try {
     const adminEmail = getEmailTemplate()['ADMIN_NOTIFY_EMAIL'];
     if (adminEmail) {
-      GmailApp.sendEmail(adminEmail, "[SANGEN] New Reservation Request", "本文...", {
+      GmailApp.sendEmail(adminEmail, "[SANGEN] New Reservation Request", "Name: " + bookingPayload.representative.lastName + "\nDate: " + bookingPayload.date + " " + bookingPayload.time + "\nPlease review in Admin Panel.", {
       from: "info@san-gen.jp" // ここに設定済みの独自ドメインアドレスを記入
       });
     }
