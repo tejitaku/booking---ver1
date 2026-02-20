@@ -205,8 +205,9 @@ function finalizeBooking(sessionId) {
   try {
     const adminEmail = getEmailTemplate()['ADMIN_NOTIFY_EMAIL'];
     if (adminEmail) {
-      GmailApp.sendEmail(adminEmail, "[SANGEN] New Reservation Request", 
-        "Name: " + bookingPayload.representative.lastName + "\nDate: " + bookingPayload.date + " " + bookingPayload.time + "\nPlease review in Admin Panel.");
+      GmailApp.sendEmail(adminEmail, "[SANGEN] New Reservation Request", "本文...", {
+      from: "info@san-gen.jp" // ここに設定済みの独自ドメインアドレスを記入
+      });
     }
   } catch (e) { logToSheet("ERR_EMAIL_ADMIN", e.message); }
 
@@ -237,7 +238,10 @@ function sendTemplatedEmail(type, booking) {
   const finalSubject = subject.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time);
   const finalBody = body.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time).replace(/{{type}}/g, booking.type);
 
-  GmailApp.sendEmail(booking.representative.email, finalSubject, finalBody, { name: "SANGEN Sake Tasting Room" });
+  GmailApp.sendEmail(booking.representative.email, finalSubject, finalBody, { 
+  name: "SANGEN Sake Tasting Room",
+  from: "info@san-gen.jp" // ここに設定済みの独自ドメインアドレスを記入
+});
 }
 
 function updateBookingStatus(p) {
