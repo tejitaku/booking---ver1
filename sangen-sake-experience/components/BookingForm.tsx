@@ -122,9 +122,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ initialData, onBack, onSubmit
   return (
     <div className="max-w-2xl mx-auto bg-white min-h-screen md:min-h-0 md:my-8 md:rounded-lg border border-gray-100 overflow-hidden">
       <div className="bg-stone-900 text-white p-6 flex items-center relative">
-        <button onClick={onBack} className="absolute left-4 p-2 hover:bg-stone-800 rounded">
-          <ArrowLeft size={20} />
-        </button>
         <h1 className="serif text-2xl mx-auto">Guest Details</h1>
       </div>
 
