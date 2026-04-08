@@ -347,8 +347,24 @@ function getMonthStatus(year, month, type, force) {
       bookingsMap[key] = (bookingsMap[key] || 0) + Number(rows[i][5]) + Number(rows[i][6]) + Number(rows[i][7]) + Number(rows[i][8]);
     }
   } catch (e) {}
-  calendar.getEvents(startDate, endDate).forEach(event => {
+    calendar.getEvents(startDate, endDate).forEach(event => {
     if (event.isAllDayEvent()) return;
+    
+    // ↓↓↓ ここから追加 ↓↓↓
+    const title = event.getTitle() || "";
+    const lowerTitle = title.toLowerCase();
+    const lowerType = type ? String(type).toLowerCase() : "";
+    
+    // Private画面の場合：タイトルに 'private' か 'プライベート' が含まれていなければスキップ
+    if (lowerType === 'private' && lowerTitle.indexOf('private') === -1 && title.indexOf('プライベート') === -1) {
+      return; 
+    }
+    // Group画面の場合：タイトルに 'group' か 'グループ' が含まれていなければスキップ
+    if (lowerType === 'group' && lowerTitle.indexOf('group') === -1 && title.indexOf('グループ') === -1) {
+      return;
+    }
+    // ↑↑↑ ここまで追加 ↑↑↑
+
     const d = event.getStartTime();
     const ds = Utilities.formatDate(d, tz, "yyyy-MM-dd");
     const ts = Utilities.formatDate(d, tz, "HH:mm");
