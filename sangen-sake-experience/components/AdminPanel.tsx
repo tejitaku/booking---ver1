@@ -405,7 +405,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   />
                   <div className="flex justify-between items-center mt-1">
                     <p className="text-[10px] text-gray-400 italic">
-                      利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"} 
+                      利用可能な変数: {"{{name}}"}, {"{{date}}"}, {"{{time}}"}, {"{{type}}"}, {"{{menu_breakdown}}"}
                       {activeTab === 'CANCELLED' && (", {{refund_amount}}")}
                     </p>
                     <button 
@@ -489,6 +489,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   <div className="col-span-2">
                     <p className="text-[10px] text-gray-400 mb-0.5">食事制限 (Dietary Restrictions)</p>
                     <p className="font-medium text-stone-900">{selectedBooking.representative.dietaryRestrictions || 'なし'}</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 予約メニュー内訳 */}
+              <div className="bg-gray-50 p-5 rounded-xl mb-6 border border-gray-100">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center text-sm">
+                  <span className="w-1 h-4 bg-stone-800 mr-2 rounded"></span>
+                  予約メニュー内訳
+                </h3>
+                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                  <div className="flex justify-between border-b border-gray-200 pb-2">
+                    <span className="text-gray-600">Adult <span className="text-[10px] text-gray-400">(Age 20+)</span></span>
+                    <span className="font-bold text-stone-900">× {selectedBooking.adults}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-200 pb-2">
+                    <span className="text-gray-600">Adult (Alcohol-Free) <span className="text-[10px] text-gray-400">(Age 13+)</span></span>
+                    <span className="font-bold text-stone-900">× {selectedBooking.adultsNonAlc}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Child <span className="text-[10px] text-gray-400">(Age 5-12)</span></span>
+                    <span className="font-bold text-stone-900">× {selectedBooking.children}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Child <span className="text-[10px] text-gray-400">(Age 0-4)</span></span>
+                    <span className="font-bold text-stone-900">× {selectedBooking.infants}</span>
+                  </div>
+                  <div className="col-span-2 flex justify-between pt-3 border-t border-gray-300">
+                    <span className="font-bold text-gray-700">合計人数</span>
+                    <span className="font-bold text-stone-900">{selectedBooking.adults + selectedBooking.adultsNonAlc + selectedBooking.children + selectedBooking.infants} 名</span>
+                  </div>
+                  <div className="col-span-2 flex justify-between">
+                    <span className="font-bold text-gray-700">合計金額</span>
+                    <span className="font-bold text-stone-900">¥{selectedBooking.totalPrice.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
