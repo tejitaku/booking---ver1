@@ -86,10 +86,18 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
     refreshData(false);
   }, [refreshData]);
 
-   // 今日の日付（比較用）
-  const today = useMemo(() => {
+    // 今日の日付（月送り判定用）
+  const today = useMemo(() => { 
     const d = new Date();
     d.setHours(0,0,0,0);
+    return d;
+  }, []);
+
+  // 予約可能な最小日付（当日・前日予約は不可。最短2日後から予約可）
+  const minBookableDate = useMemo(() => { 
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 2);
     return d;
   }, []);
 
