@@ -234,14 +234,58 @@ function sendTemplatedEmail(type, booking) {
     } else return;
   }
 
+  // メニュー内訳（4行すべて出力 / 0人でも表示。各行に金額、末尾に合計金額）
+  const adults        = Number(booking.adults || 0);
+  const adultsNonAlc  = Number(booking.adultsNonAlc || 0);
+  const children      = Number(booking.children || 0);
+  const infants       = Number(booking.infants || 0);
+
+  let adultTotal = 0, nonAlcTotal = 0, childTotal = 0;
+  if (booking.type === 'PRIVATE') {
+    if (adults === 1) adultTotal = 36300;
+    else if (adults === 2) adultTotal = 48400;
+    else if (adults === 3) adultTotal = 66000;
+    else if (adults === 4) adultTotal = 79200;
+    else if (adults >= 5) adultTotal = 79200 + ((adults - 4) * 19800);
+    nonAlcTotal = adultsNonAlc * 13200;
+    childTotal  = children * 5500;
+  } else {
+    adultTotal   = adults * 11000;
+    nonAlcTotal  = adultsNonAlc * 8800;
+    childTotal   = children * 3300;
+  }
+  const subTotal   = adultTotal + nonAlcTotal + childTotal;
+  const bookingFee = Math.floor(subTotal * 0.015);
+  const total      = subTotal + bookingFee;
+  const fmt = (n) => '¥' + Number(n).toLocaleString('ja-JP');
+
+  const menuBreakdown =
+    '--- Menu ---\n' +
+    'Adult (Age 20+) × '         + adults       + ' — ' + fmt(adultTotal)  + '\n' +
+    'Adult (Alcohol-Free) × '    + adultsNonAlc + ' — ' + fmt(nonAlcTotal) + '\n' +
+    'Child (Age 5-12) × '        + children     + ' — ' + fmt(childTotal)  + '\n' +
+    'Child (Age 0-4) × '         + infants      + ' — ¥0\n' +
+    '--- Total ---\n' +
+    'Subtotal: '             + fmt(subTotal)   + '\n' +
+    'Booking Fee (1.5%): '   + fmt(bookingFee) + '\n' +
+    'Total: '                + fmt(total);
+
   const name = booking.representative.lastName + ' ' + booking.representative.firstName;
-  const finalSubject = subject.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time);
-  const finalBody = body.replace(/{{name}}/g, name).replace(/{{date}}/g, booking.date).replace(/{{time}}/g, booking.time).replace(/{{type}}/g, booking.type);
+  const finalSubject = subject
+    .replace(/{{name}}/g, name)
+    .replace(/{{date}}/g, booking.date)
+    .replace(/{{time}}/g, booking.time);
+  const finalBody = body
+    .replace(/{{name}}/g, name)
+    .replace(/{{date}}/g, booking.date)
+    .replace(/{{time}}/g, booking.time)
+    .replace(/{{type}}/g, booking.type)
+    .replace(/{{menu_breakdown}}/g, menuBreakdown);
 
   GmailApp.sendEmail(booking.representative.email, finalSubject, finalBody, { 
-  name: "SANGEN Sake Tasting Room",
-  from: "info@san-gen.jp" // ここに設定済みの独自ドメインアドレスを記入
-});
+    name: "SANGEN Sake Tasting Room",
+    from: "info@san-gen.jp"
+  });
 }
 
 function updateBookingStatus(p) {
