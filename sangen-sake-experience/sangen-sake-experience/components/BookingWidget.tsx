@@ -78,6 +78,11 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
   const today = new Date();
   today.setHours(0,0,0,0);
 
+// 予約可能な最小日付（当日・前日予約は不可。最短2日後から予約可）
+  const minBookableDate = new Date();
+  minBookableDate.setHours(0,0,0,0);
+  minBookableDate.setDate(minBookableDate.getDate() + 2);
+  
   const isPrevDisabled = 
     viewDate.getFullYear() < today.getFullYear() || 
     (viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() <= today.getMonth());
@@ -150,7 +155,7 @@ const BookingWidget: React.FC<BookingWidgetProps> = ({ reservationType, onProcee
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 const dateObj = new Date(year, month, d);
                 
-                const isPast = dateObj < today;
+                const isPast = dateObj < minBookableDate;
                 const isSelected = selectedDate === dateStr;
                 
                 // Determine if unavailable (Full or Closed)
